@@ -19,11 +19,13 @@ A small, lightweight, free Windows app for the Steam version of Melvor Idle 2. T
 - **"While you were away".** When you show the game again, get a summary of the XP, levels, items, and GP you earned. Choose a quick notification or a **Detailed Summary** window with XP per hour and more.
 - **Idle and death warnings.** If your character stops training while the game is hidden, you get a notification and the icon gets a red box. If your character dies you get a notification and the icon displays a skull. Changing characters resets the tracker.
 - **Goals.** A simple checklist for your plans: add, check off, rename, reorder.
+- **Hidden in Tray.** Companion can be chosen to stay hidden in the tray menu [1], or visible in the taskbar [2].
 - **Taskbar widget.** Show the switch and your session time or current activity right on the taskbar.
 - **Launch through Steam** from the tray menu, optionally hiding the game as soon as it starts.
+- 
+![Companion in tray mode instead](docs/images/tray.png) [1]
+![Taskbar widget showing time hidden, today's total, and the current activity](docs/images/taskbar.png) [2]
 
-![Taskbar widget showing time hidden, today's total, and the current activity](docs/images/taskbar.png)
-     ![Companion in tray mode instead](docs/images/tray.png)
 
 ![Detailed Summary window](docs/images/summary.png)    ![Goals window](docs/images/goals.png)
 
