@@ -1,0 +1,8 @@
+#define ID_REMINDER 201
+#define ID_SHORTCUT 202
+#define ID_AFTER 301
+#define ID_AT 302
+#define ID_HOURS 303
+#define ID_MINUTES 304
+#define ID_PREVIEW 305
+#define ID_CAPTURE 306
