@@ -2,7 +2,7 @@
 
 **Hide Melvor Idle 2 away from your screen, in your system tray while it keeps playing.** See what you're training at a glance, track your goals, and get a summary of what you earned while it was hidden.
 
-A small, free Windows app for the Steam version of Melvor Idle 2. The portable executable includes the C++ runtime.
+A small, lightweight, free Windows app for the Steam version of Melvor Idle 2. The portable executable includes the C++ runtime.
 
 > **Windows only for now.** Melvor Companion runs on Windows 10 and 11. A macOS version may come later.
 
@@ -17,9 +17,9 @@ A small, free Windows app for the Steam version of Melvor Idle 2. The portable e
 - **Hide and show the game in one click.** Double-click the switch icon, or turn on a keyboard shortcut (**Ctrl+M** by default). Melvor keeps running in the background and its sound is muted while hidden.
 - **A glance at your progress.** Hover the icon to see how long the game has been hidden and, optionally, what your character is doing, read from your latest save.
 - **"While you were away".** When you show the game again, get a summary of the XP, levels, items, and GP you earned. Choose a quick notification or a **Detailed Summary** window with XP per hour and more.
-- **Idle and death warnings.** If your character stops training while the game is hidden, you get a notification and the icon gets a red box. If your character dies in combat, you get a notification naming the enemy and the switch shows a skull until you respawn; the away summary shows how much of that hidden session the character spent idle after death, including times under a minute. Changing characters resets the tracker.
+- **Idle and death warnings.** If your character stops training while the game is hidden, you get a notification and the icon gets a red box. If your character dies you get a notification and the icon displays a skull. Changing characters resets the tracker.
 - **Goals.** A simple checklist for your plans: add, check off, rename, reorder.
-- **Taskbar widget (recommended).** Show the switch and your session time or current activity right on the taskbar.
+- **Taskbar widget.** Show the switch and your session time or current activity right on the taskbar.
 - **Launch through Steam** from the tray menu, optionally hiding the game as soon as it starts.
 
 ![Detailed Summary window](docs/images/summary.png) ![Goals window](docs/images/goals.png)
@@ -46,7 +46,7 @@ The switch shows a mint **M** while Melvor is visible, an amber moon while it's 
 | Edit goals | **Goals...**: Enter adds, Space checks off, F2 renames, drag or Ctrl+↑/↓ reorders, Delete removes (or just use your mouse)|
 | Choose summaries and warnings | **Notifications** submenu |
 
-Showing the game brings it back behind your current window, so it never steals focus. Click it on the taskbar or use Alt+Tab to switch to it. Exiting Melvor Companion always shows the game again first.
+Showing the game brings it back behind your current window, so it doesn't force the screen on it. Exiting Melvor Companion always shows the game again first.
 
 If the companion closes unexpectedly while Melvor is hidden, reopen the companion. It recognizes the window it previously hid and shows it once, even with **Start minimized** enabled.
 
