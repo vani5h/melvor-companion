@@ -10,7 +10,7 @@ A small, free Windows app for the Steam version of Melvor Idle 2. The portable e
 
 ![The switch icon in its four states](docs/images/states.png)
 
-> **Just want it working?** Download the Windows x64 ZIP from the [latest release](https://github.com/vani5h/melvor-companion/releases/latest), extract it, and run `MelvorCompanion.exe`.
+> Download the Windows x64 ZIP from the [latest release](https://github.com/vani5h/melvor-companion/releases/latest), extract it, and run `MelvorCompanion.exe`.
 
 ## Features
 
