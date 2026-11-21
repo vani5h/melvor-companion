@@ -22,10 +22,13 @@ A small, lightweight, free Windows app for the Steam version of Melvor Idle 2. T
 - **Hidden in Tray.** Companion can be chosen to stay hidden in the tray menu [1], or visible in the taskbar [2].
 - **Taskbar widget.** Show the switch and your session time or current activity right on the taskbar.
 - **Launch through Steam** from the tray menu, optionally hiding the game as soon as it starts.
-- 
-![Companion in tray mode instead](docs/images/tray.png) [1]
-![Taskbar widget showing time hidden, today's total, and the current activity](docs/images/taskbar.png) [2]
 
+<table>
+  <tr>
+    <td align="center" valign="bottom"><img src="docs/images/tray.png" alt="Melvor Companion in the notification area"><br><sub><b>[1]</b> In the tray</sub></td>
+    <td align="center" valign="bottom"><img src="docs/images/taskbar.png" alt="Taskbar widget showing time hidden and the current activity"><br><sub><b>[2]</b> On the taskbar</sub></td>
+  </tr>
+</table>
 
 ![Detailed Summary window](docs/images/summary.png)    ![Goals window](docs/images/goals.png)
 
