@@ -23,9 +23,9 @@ A small, lightweight, free Windows app for the Steam version of Melvor Idle 2. T
 - **Launch through Steam** from the tray menu, optionally hiding the game as soon as it starts.
 
 ![Taskbar widget showing time hidden, today's total, and the current activity](docs/images/taskbar.png)
-![Companion in tray mode instead](docs/images/tray.png)
+     ![Companion in tray mode instead](docs/images/tray.png)
 
-![Detailed Summary window](docs/images/summary.png) ![Goals window](docs/images/goals.png)
+![Detailed Summary window](docs/images/summary.png)    ![Goals window](docs/images/goals.png)
 
 ## Getting started
 
