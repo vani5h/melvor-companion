@@ -1,10 +1,4 @@
-// The Goals window: a themed checklist.
-//
-// Native controls keep the behavior people and assistive technology expect. The ListView
-// provides selection, scrolling, keyboard navigation, and the checked state (Space toggles it);
-// the EDIT control provides typing, clipboard, undo, and IME input. Everything visible is painted
-// here instead, because the stock controls only partly support dark mode. Shapes use GDI+ for
-// anti-aliased rounded corners; text uses classic GDI so it renders like the rest of Windows.
+// Goals window. Native ListView/EDIT for behavior, custom painted for dark mode.
 #include "settings.hpp"
 #include "ui.hpp"
 #include <windowsx.h>
@@ -19,10 +13,10 @@
 
 namespace companion {
 namespace {
-// Control IDs, shared with src/icons.rc and the desktop test.
+// shared with icons.rc
 enum : int { id_list = 501, id_status = 502, id_input = 503, id_add = 504, id_summary = 506, id_clear = 508 };
 constexpr UINT_PTR list_subclass_id = 1;
-using namespace ui; // palette, dip, fonts, and drawing helpers shared with the summary window
+using namespace ui;
 
 struct GoalsEditor {
     const std::wstring& text;
@@ -31,18 +25,17 @@ struct GoalsEditor {
     std::function<void(const RECT&)> save_bounds;
     FontPtr body, strike, heading;
     int line_height{};
-    int hover = -1;        // row under the mouse, or -1
-    bool tracking_leave{}; // TrackMouseEvent is armed for WM_MOUSELEAVE
-    bool allow_edit{};     // the next label edit was started by F2 or a double-click
-    bool dragging{};       // a goal is being dragged to a new position
+    int hover = -1;
+    bool tracking_leave{};
+    bool allow_edit{}; // set by F2 / double-click
+    bool dragging{};
     int drag_from = -1;
-    int drop_index = -1;   // insertion point: the dragged goal lands before this row
+    int drop_index = -1; // dragged goal lands before this row
 };
 
-// ---- List helpers ----------------------------------------------------------------------------
 
 std::wstring item_text(HWND list, int index) {
-    // LVM_GETITEMTEXT copies at most the buffer size, so grow until the text fits.
+    // grow until it fits
     std::wstring text(256, L'\0');
     for (;;) {
         LVITEMW item{};
@@ -75,7 +68,7 @@ std::wstring trimmed(std::wstring_view text) {
     return std::wstring(text.substr(first, text.find_last_not_of(L" \t") - first + 1));
 }
 
-// Moves a goal so it lands before row `insertion` (as counted before the move).
+// insertion is counted before the move
 void move_row(HWND list, int from, int insertion) {
     if (from < 0 || insertion == from || insertion == from + 1) return;
     auto text = item_text(list, from);
@@ -87,7 +80,6 @@ void move_row(HWND list, int from, int insertion) {
     ListView_EnsureVisible(list, index, FALSE);
 }
 
-// ---- Layout ----------------------------------------------------------------------------------
 
 struct Layout { RECT summary, percent, bar, card, list, frame, input, add, clear, status, done; int separator; };
 
@@ -127,7 +119,7 @@ void apply_layout(HWND dlg, const GoalsEditor& editor) {
     place(dlg, id_clear, l.clear);
     place(dlg, id_status, l.status);
     place(dlg, IDOK, l.done);
-    // The last column fills the remaining width, so long text never adds a horizontal scrollbar.
+    // last column fills the width (no h-scrollbar)
     ListView_SetColumnWidth(GetDlgItem(dlg, id_list), 0, LVSCW_AUTOSIZE_USEHEADER);
     InvalidateRect(dlg, nullptr, FALSE);
 }
@@ -142,17 +134,16 @@ void refresh(HWND dlg) {
     EnableWindow(GetDlgItem(dlg, id_add), typed.find_first_not_of(L" \t") != std::wstring::npos);
     EnableWindow(GetDlgItem(dlg, id_clear), done > 0);
     ListView_SetColumnWidth(list, 0, LVSCW_AUTOSIZE_USEHEADER);
-    InvalidateRect(dlg, nullptr, FALSE); // header percentage and progress bar
+    InvalidateRect(dlg, nullptr, FALSE);
 }
 
-// ---- Painting --------------------------------------------------------------------------------
 
 void paint_dialog(HWND dlg, const GoalsEditor& editor) {
     PAINTSTRUCT ps{};
     HDC target = BeginPaint(dlg, &ps);
     RECT client{};
     GetClientRect(dlg, &client);
-    // Draw into an off-screen buffer and copy it once, so resizing does not flicker.
+    // double buffered
     HDC dc{};
     HPAINTBUFFER buffer = BeginBufferedPaint(target, &client, BPBF_TOPDOWNDIB, nullptr, &dc);
     if (!buffer) dc = target;
@@ -207,7 +198,7 @@ void paint_row(HWND list, int index, HDC dc, const GoalsEditor& editor) {
         if (focused_list && (state & LVIS_SELECTED)) fill_rounded(graphics, rectf(inner), radius, p.selected);
         else if (hovered) fill_rounded(graphics, rectf(inner), radius, p.hover);
         if (focus_ring) stroke_rounded(graphics, rectf(inner), radius, p.accent, dipf(list, 1.5f));
-        // Checkbox: the ListView's state-image area is the click target; this is only its look.
+        // look only; the state-image area is the click target
         float size = dipf(list, 18);
         float x = static_cast<float>(row.left) + dipf(list, 12);
         float y = static_cast<float>(row.top + row.bottom) / 2 - size / 2;
@@ -226,7 +217,7 @@ void paint_row(HWND list, int index, HDC dc, const GoalsEditor& editor) {
             stroke_rounded(graphics, box, dipf(list, 5), p.box, dipf(list, 1.5f));
         }
         if (hovered) {
-            // Delete mark, matching the click zone in delete_zone().
+            // matches delete_zone()
             float cx = static_cast<float>(row.right) - dipf(list, 20);
             float cy = static_cast<float>(row.top + row.bottom) / 2;
             float half = dipf(list, 4);
@@ -251,9 +242,9 @@ LRESULT draw_list(NMLVCUSTOMDRAW& draw, const GoalsEditor& editor) {
         return CDRF_NOTIFYITEMDRAW | CDRF_NOTIFYPOSTPAINT;
     case CDDS_ITEMPREPAINT:
         paint_row(list, static_cast<int>(draw.nmcd.dwItemSpec), draw.nmcd.hdc, editor);
-        return CDRF_SKIPDEFAULT; // the row is fully painted; skip the stock drawing
+        return CDRF_SKIPDEFAULT;
     case CDDS_POSTPAINT: {
-        // The themed ListView marks the column edge in the empty space below the rows; cover it.
+        // hide the column edge the themed ListView draws below the rows
         RECT client{};
         GetClientRect(list, &client);
         int count = ListView_GetItemCount(list);
@@ -270,7 +261,6 @@ LRESULT draw_list(NMLVCUSTOMDRAW& draw, const GoalsEditor& editor) {
         if (count == 0)
             draw_text(draw.nmcd.hdc, editor.body.get(), palette().muted, L"No goals yet. Add one below.", client, DT_CENTER);
         if (editor.dragging && editor.drop_index >= 0 && count > 0) {
-            // Insertion line where the dragged goal will land.
             RECT anchor{};
             bool after_last = editor.drop_index >= count;
             ListView_GetItemRect(list, after_last ? count - 1 : editor.drop_index, &anchor, LVIR_BOUNDS);
@@ -294,7 +284,6 @@ void draw_button(const DRAWITEMSTRUCT& item, const GoalsEditor& editor) {
     ui::draw_button(item, style, editor.body.get(), editor.heading.get());
 }
 
-// ---- Editing ---------------------------------------------------------------------------------
 
 void set_hover(HWND list, GoalsEditor& editor, int index) {
     if (editor.hover == index) return;
@@ -317,7 +306,7 @@ bool delete_zone(HWND list, POINT point) {
 }
 
 void rehover(HWND list, GoalsEditor& editor) {
-    // Rows shift after a deletion; recompute which one is under the cursor.
+    // rows shift after a delete
     POINT cursor{};
     GetCursorPos(&cursor);
     ScreenToClient(list, &cursor);
@@ -375,7 +364,7 @@ int drop_index_at(HWND list, POINT point) {
 
 void end_drag(HWND list, GoalsEditor& editor, bool drop) {
     if (!editor.dragging) return;
-    editor.dragging = false; // first, so the WM_CAPTURECHANGED from ReleaseCapture is ignored
+    editor.dragging = false; // before ReleaseCapture so WM_CAPTURECHANGED is ignored
     if (GetCapture() == list) ReleaseCapture();
     if (drop) move_row(list, editor.drag_from, editor.drop_index);
     editor.drag_from = editor.drop_index = -1;
@@ -392,7 +381,7 @@ void start_edit(HWND list, GoalsEditor& editor, int index) {
 bool save_and_close(HWND dlg, GoalsEditor& editor) {
     if (editor.save_bounds) {
         RECT bounds{};
-        // The window position is a convenience; failing to store it must not block saving goals.
+        // not fatal
         try { if (GetWindowRect(dlg, &bounds)) editor.save_bounds(bounds); } catch (...) {}
     }
     try {
@@ -412,14 +401,13 @@ bool save_and_close(HWND dlg, GoalsEditor& editor) {
     }
 }
 
-// Subclassing intercepts the ListView's own messages to add hover tracking and the delete mark.
 LRESULT CALLBACK list_proc(HWND list, UINT message, WPARAM wp, LPARAM lp, UINT_PTR, DWORD_PTR data) {
     auto& editor = *reinterpret_cast<GoalsEditor*>(data);
     switch (message) {
     case WM_MOUSEMOVE: {
         POINT point{GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
         if (editor.dragging) {
-            // Scroll when dragging past the top or bottom edge, then track the insertion point.
+            // autoscroll at the edges
             RECT client{};
             GetClientRect(list, &client);
             if (point.y < 0) ListView_Scroll(list, 0, -dip(list, 40));
@@ -447,7 +435,7 @@ LRESULT CALLBACK list_proc(HWND list, UINT message, WPARAM wp, LPARAM lp, UINT_P
         int index = row_at(list, point);
         if (index >= 0 && index == editor.hover && delete_zone(list, point)) {
             delete_goal(GetParent(list), editor, index);
-            return 0; // handled; do not let the ListView select the removed row
+            return 0;
         }
         break;
     }
@@ -455,10 +443,10 @@ LRESULT CALLBACK list_proc(HWND list, UINT message, WPARAM wp, LPARAM lp, UINT_P
         if (editor.dragging) { end_drag(list, editor, true); return 0; }
         break;
     case WM_CAPTURECHANGED:
-        end_drag(list, editor, false); // another window took the mouse: cancel the drag
+        end_drag(list, editor, false); // lost the mouse: cancel
         break;
     case WM_LBUTTONDBLCLK: {
-        // Double-click the text to rename a goal. On the checkbox it keeps the stock toggle.
+        // checkbox keeps the stock toggle
         POINT point{GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
         int index = row_at(list, point);
         if (index >= 0 && point.x >= dip(list, 44) && !delete_zone(list, point)) {
@@ -468,7 +456,7 @@ LRESULT CALLBACK list_proc(HWND list, UINT message, WPARAM wp, LPARAM lp, UINT_P
         break;
     }
     case WM_KEYDOWN:
-        // Ctrl+Up / Ctrl+Down move the focused goal: the keyboard equivalent of dragging.
+        // Ctrl+Up/Down
         if ((wp == VK_UP || wp == VK_DOWN) && GetKeyState(VK_CONTROL) < 0) {
             int index = ListView_GetNextItem(list, -1, LVNI_FOCUSED);
             int count = ListView_GetItemCount(list);
@@ -480,7 +468,7 @@ LRESULT CALLBACK list_proc(HWND list, UINT message, WPARAM wp, LPARAM lp, UINT_P
         }
         break;
     case WM_CTLCOLOREDIT: {
-        // The rename box is the ListView's child, so its colors are requested here.
+        // rename box is the ListView's child
         auto p = palette();
         HDC dc = reinterpret_cast<HDC>(wp);
         SetTextColor(dc, p.text);
@@ -517,13 +505,12 @@ void init_dialog(HWND dlg, GoalsEditor& editor) {
 
     HWND list = GetDlgItem(dlg, id_list);
     SendMessageW(list, WM_SETFONT, reinterpret_cast<WPARAM>(editor.body.get()), FALSE);
-    // Theme first: a theme change rebuilds the checkbox images, which would undo the next steps.
-    SetWindowTheme(list, dark_mode() ? L"DarkMode_Explorer" : L"Explorer", nullptr); // dark scrollbar
+    // theme first: it rebuilds the checkbox images
+    SetWindowTheme(list, dark_mode() ? L"DarkMode_Explorer" : L"Explorer", nullptr);
     ListView_SetExtendedListViewStyle(list, LVS_EX_CHECKBOXES | LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
-    // Replace the stock checkbox images with blank ones of our size. They are never drawn, but they
-    // set the row height and the width of the click target that toggles a goal.
+    // blank checkbox images: never drawn, but set row height and click target
     HIMAGELIST zone = ImageList_Create(dip(dlg, 44), dip(dlg, 40), ILC_COLOR32, 2, 0);
-    ImageList_SetImageCount(zone, 2); // index 1 = unchecked, 2 = checked
+    ImageList_SetImageCount(zone, 2);
     if (HIMAGELIST stock = ListView_SetImageList(list, zone, LVSIL_STATE)) ImageList_Destroy(stock);
     ListView_SetBkColor(list, p.card);
     ListView_SetTextBkColor(list, p.card);
@@ -532,7 +519,7 @@ void init_dialog(HWND dlg, GoalsEditor& editor) {
     ListView_InsertColumn(list, 0, &column);
     SetWindowSubclass(list, list_proc, list_subclass_id, reinterpret_cast<DWORD_PTR>(&editor));
 
-    // Saved format: one goal per line, "[x] " or "[ ] " marks completion; older plain lines are open goals.
+    // "[x] " / "[ ] " per line; plain lines are open goals
     const auto& text = editor.text;
     for (size_t start = 0; start < text.size();) {
         auto end = text.find(L'\n', start);
@@ -550,8 +537,7 @@ void init_dialog(HWND dlg, GoalsEditor& editor) {
     SendMessageW(input, EM_SETLIMITTEXT, 1000, 0);
     SendMessageW(input, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"Add a goal..."));
 
-    // Reopen where the window was last closed, if that spot is still on a connected monitor.
-    // Otherwise size it for its content and center it on the current monitor's work area.
+    // last position if still on screen, else centered
     if (editor.bounds && MonitorFromRect(&*editor.bounds, MONITOR_DEFAULTTONULL)) {
         const RECT& last = *editor.bounds;
         SetWindowPos(dlg, nullptr, last.left, last.top, std::max<int>(last.right - last.left, dip(dlg, 320)),
@@ -575,11 +561,11 @@ INT_PTR CALLBACK goals_proc(HWND dlg, UINT message, WPARAM wp, LPARAM lp) {
     if (message == WM_INITDIALOG) {
         SetWindowLongPtrW(dlg, DWLP_USER, lp);
         init_dialog(dlg, *reinterpret_cast<GoalsEditor*>(lp));
-        SetFocus(GetDlgItem(dlg, id_input)); // ready to type a new goal
-        return FALSE;                        // FALSE: we set the focus ourselves
+        SetFocus(GetDlgItem(dlg, id_input));
+        return FALSE; // we set the focus
     }
     auto* editor = reinterpret_cast<GoalsEditor*>(GetWindowLongPtrW(dlg, DWLP_USER));
-    if (!editor) return FALSE; // messages that arrive before WM_INITDIALOG
+    if (!editor) return FALSE; // before WM_INITDIALOG
     auto p = palette();
     switch (message) {
     case WM_SIZE:
@@ -591,7 +577,7 @@ INT_PTR CALLBACK goals_proc(HWND dlg, UINT message, WPARAM wp, LPARAM lp) {
         return TRUE;
     }
     case WM_ERASEBKGND:
-        SetWindowLongPtrW(dlg, DWLP_MSGRESULT, 1); // WM_PAINT covers the whole client area
+        SetWindowLongPtrW(dlg, DWLP_MSGRESULT, 1);
         return TRUE;
     case WM_PAINT:
         paint_dialog(dlg, *editor);
@@ -622,7 +608,7 @@ INT_PTR CALLBACK goals_proc(HWND dlg, UINT message, WPARAM wp, LPARAM lp) {
             if (index >= 0) delete_goal(dlg, *editor, index);
         }
         if (notice->code == LVN_KEYDOWN && reinterpret_cast<NMLVKEYDOWN*>(lp)->wVKey == VK_F2)
-            editor->allow_edit = true; // the ListView starts the rename itself
+            editor->allow_edit = true;
         if (notice->code == LVN_BEGINDRAG) {
             editor->dragging = true;
             editor->drag_from = editor->drop_index = reinterpret_cast<NMLISTVIEW*>(lp)->iItem;
@@ -630,7 +616,7 @@ INT_PTR CALLBACK goals_proc(HWND dlg, UINT message, WPARAM wp, LPARAM lp) {
             SetCapture(notice->hwndFrom);
         }
         if (notice->code == LVN_BEGINLABELEDITW) {
-            // Renames start only from F2 or a double-click, not from clicking a selected row.
+            // only F2 / double-click
             bool allowed = editor->allow_edit;
             editor->allow_edit = false;
             if (allowed) {
@@ -638,20 +624,20 @@ INT_PTR CALLBACK goals_proc(HWND dlg, UINT message, WPARAM wp, LPARAM lp) {
                 SendMessageW(edit, WM_SETFONT, reinterpret_cast<WPARAM>(editor->body.get()), FALSE);
                 SendMessageW(edit, EM_SETLIMITTEXT, 1000, 0);
             }
-            SetWindowLongPtrW(dlg, DWLP_MSGRESULT, allowed ? FALSE : TRUE); // TRUE cancels the edit
+            SetWindowLongPtrW(dlg, DWLP_MSGRESULT, allowed ? FALSE : TRUE); // TRUE cancels
             return TRUE;
         }
         if (notice->code == LVN_ENDLABELEDITW) {
             auto& item = reinterpret_cast<NMLVDISPINFOW*>(lp)->item;
-            if (item.pszText) { // null when the rename was cancelled
+            if (item.pszText) { // null if cancelled
                 auto text = trimmed(item.pszText);
                 if (!text.empty()) ListView_SetItemText(notice->hwndFrom, item.iItem, 0, text.data());
             }
-            SetWindowLongPtrW(dlg, DWLP_MSGRESULT, FALSE); // the trimmed text is already stored
+            SetWindowLongPtrW(dlg, DWLP_MSGRESULT, FALSE);
             return TRUE;
         }
         if (notice->code == NM_SETFOCUS || notice->code == NM_KILLFOCUS)
-            InvalidateRect(notice->hwndFrom, nullptr, FALSE); // selection and focus ring follow focus
+            InvalidateRect(notice->hwndFrom, nullptr, FALSE);
         return FALSE;
     }
     case WM_COMMAND:
@@ -667,16 +653,15 @@ INT_PTR CALLBACK goals_proc(HWND dlg, UINT message, WPARAM wp, LPARAM lp) {
             clear_completed(dlg, *editor);
             return TRUE;
         case IDOK: {
-            // While renaming, Enter finishes the rename. Enter in the input adds the goal;
-            // Enter elsewhere, or the Done button, closes.
+            // Enter: finish rename / add goal / close
             HWND list = GetDlgItem(dlg, id_list);
-            if (ListView_GetEditControl(list)) { SetFocus(list); return TRUE; } // losing focus commits
+            if (ListView_GetEditControl(list)) { SetFocus(list); return TRUE; }
             HWND input = GetDlgItem(dlg, id_input);
             if (GetFocus() == input && GetWindowTextLengthW(input) > 0) add_goal(dlg);
             else save_and_close(dlg, *editor);
             return TRUE;
         }
-        case IDCANCEL: { // Esc or the title-bar close button; closing always saves
+        case IDCANCEL: { // Esc or close; always saves
             HWND list = GetDlgItem(dlg, id_list);
             if (ListView_GetEditControl(list)) { ListView_CancelEditLabel(list); return TRUE; }
             if (editor->dragging) { end_drag(list, *editor, false); return TRUE; }
@@ -688,7 +673,7 @@ INT_PTR CALLBACK goals_proc(HWND dlg, UINT message, WPARAM wp, LPARAM lp) {
     }
     return FALSE;
 }
-} // namespace
+}
 
 void edit_goals(HWND owner, const std::wstring& text, std::function<void(const std::wstring&)> save,
                 std::optional<RECT> bounds, std::function<void(const RECT&)> save_bounds) {
@@ -699,4 +684,4 @@ void edit_goals(HWND owner, const std::wstring& text, std::function<void(const s
                         reinterpret_cast<LPARAM>(&editor)) == -1)
         throw std::runtime_error("Could not open goals");
 }
-} // namespace companion
+}

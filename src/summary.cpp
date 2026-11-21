@@ -1,5 +1,4 @@
-// The Detailed Summary window: what changed while the game was hidden, laid out for reading
-// at leisure (a notification disappears after a few seconds). Painted like the Goals window.
+// Detailed Summary window, painted like Goals.
 #include "summary.hpp"
 #include "settings.hpp"
 #include "ui.hpp"
@@ -23,14 +22,14 @@ std::wstring compact(double value) {
 std::wstring signed_amount(long long value) {
     return (value >= 0 ? L"+" : L"−") + grouped(value);
 }
-// One line of content. Rows inside a section share a rounded card.
+// rows in a section share a card
 struct Row {
     enum Kind { heading, line, note } kind{};
     std::wstring left, left_detail, right, right_detail;
-    bool left_detail_gain{}; // level-ups are highlighted
-    bool right_gain{};       // positive amounts are highlighted
-    int height{};            // device-independent pixels
-    bool danger{};           // notes shown in the alert color (a death)
+    bool left_detail_gain{};
+    bool right_gain{};
+    int height{}; // DIP
+    bool danger{}; // shown in red
 };
 
 struct Summary {
@@ -38,9 +37,9 @@ struct Summary {
     BufferedPaintSession buffered_paint;
     std::wstring subtitle;
     std::vector<Row> rows;
-    FontPtr title, body, strong, caption; // not "small": the Windows RPC headers define small as a macro
-    int scroll{};          // pixels scrolled down
-    int content_height{};  // pixels
+    FontPtr title, body, strong, caption; // not "small": the RPC headers define it as a macro
+    int scroll{};
+    int content_height{};
 };
 HWND open_window{};
 
@@ -57,13 +56,12 @@ std::vector<Row> build_rows(const ProgressChange& change, bool new_save) {
         return rows;
     }
     if (change.deaths > 0) {
-        // A death is the most important news: first, in red.
         Row died{Row::note, death_text(change)};
         died.danger = true;
         died.height = 56;
         rows.push_back(died);
     }
-    // Rates use the time between the two saves, which is what the gains were measured over.
+    // rates use the time between the two saves
     double hours = static_cast<double>(change.between_saves.count()) / 3600.0;
     if (!change.skills.empty()) {
         heading(L"Skills");
@@ -108,7 +106,6 @@ std::vector<Row> build_rows(const ProgressChange& change, bool new_save) {
     return rows;
 }
 
-// Fixed areas, in pixels.
 int header_height(HWND window) { return dip(window, 78); }
 int footer_height(HWND window) { return dip(window, 64); }
 RECT content_area(HWND window) {
@@ -144,7 +141,6 @@ void paint(HWND window, Summary& summary) {
         Gdiplus::Graphics graphics(dc);
         prepare(graphics);
         graphics.SetClip(rectf(area));
-        // Cards behind each run of line rows.
         int y = area.top - summary.scroll;
         for (size_t i = 0; i < summary.rows.size();) {
             if (summary.rows[i].kind != Row::line) { y += d(summary.rows[i].height); ++i; continue; }
@@ -156,7 +152,7 @@ void paint(HWND window, Summary& summary) {
             y += d(8);
         }
         if (int limit = max_scroll(window, summary); limit > 0) {
-            // Scroll position indicator.
+            // scrollbar
             float track = static_cast<float>(area.bottom - area.top) - dipf(window, 8);
             float thumb = std::max(dipf(window, 24), track * track / (track + static_cast<float>(limit)));
             float offset = (track - thumb) * static_cast<float>(summary.scroll) / static_cast<float>(limit);
@@ -190,7 +186,7 @@ void paint(HWND window, Summary& summary) {
             draw_text(dc, summary.strong.get(), p.text, row.left, upper, DT_LEFT | DT_END_ELLIPSIS);
             draw_text(dc, summary.strong.get(), row.right_gain ? p.gain : p.muted, row.right, upper, DT_RIGHT);
             RECT detail = lower;
-            detail.right -= d(96); // leave room for the rate
+            detail.right -= d(96); // room for the rate
             draw_text(dc, summary.caption.get(), row.left_detail_gain ? p.gain : p.muted, row.left_detail, detail, DT_LEFT | DT_END_ELLIPSIS);
             draw_text(dc, summary.caption.get(), p.muted, row.right_detail, lower, DT_RIGHT);
         }
@@ -227,7 +223,7 @@ INT_PTR CALLBACK summary_proc(HWND window, UINT message, WPARAM wp, LPARAM lp) {
     auto* summary = reinterpret_cast<Summary*>(GetWindowLongPtrW(window, DWLP_USER));
     if (message == WM_INITDIALOG) {
         SetWindowLongPtrW(window, DWLP_USER, lp);
-        return FALSE; // sized and shown by show_summary()
+        return FALSE; // show_summary() sizes it
     }
     if (!summary) return FALSE;
     switch (message) {
@@ -244,13 +240,12 @@ INT_PTR CALLBACK summary_proc(HWND window, UINT message, WPARAM wp, LPARAM lp) {
         scroll_to(window, *summary, summary->scroll - GET_WHEEL_DELTA_WPARAM(wp) * dip(window, 48) / WHEEL_DELTA);
         return TRUE;
     case WM_COMMAND:
-        if (LOWORD(wp) == IDOK || LOWORD(wp) == IDCANCEL) DestroyWindow(window); // Close, Enter, or Esc
+        if (LOWORD(wp) == IDOK || LOWORD(wp) == IDCANCEL) DestroyWindow(window);
         return TRUE;
     case WM_CLOSE:
         DestroyWindow(window);
         return TRUE;
     case WM_NCDESTROY:
-        // The window owns its state; release it with the window.
         delete summary;
         SetWindowLongPtrW(window, DWLP_USER, 0);
         if (open_window == window) open_window = nullptr;
@@ -258,7 +253,7 @@ INT_PTR CALLBACK summary_proc(HWND window, UINT message, WPARAM wp, LPARAM lp) {
     }
     return FALSE;
 }
-} // namespace
+}
 
 void show_summary(const ProgressChange& change, std::chrono::seconds hidden_for, bool new_save, HICON icon) {
     if (open_window) DestroyWindow(open_window);
@@ -270,7 +265,7 @@ void show_summary(const ProgressChange& change, std::chrono::seconds hidden_for,
     HWND window = CreateDialogParamW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(205), nullptr, summary_proc,
                                      reinterpret_cast<LPARAM>(state.get()));
     if (!window) throw std::runtime_error("Could not open the summary");
-    auto* summary = state.release(); // owned by the window from here; freed in WM_NCDESTROY
+    auto* summary = state.release(); // freed in WM_NCDESTROY
     open_window = window;
 
     BOOL dark = dark_mode();
@@ -285,7 +280,7 @@ void show_summary(const ProgressChange& change, std::chrono::seconds hidden_for,
     summary->caption = make_font(window, 9, FW_NORMAL);
     summary->content_height = measure_content(window, *summary);
 
-    // Size to the content, up to 70% of the screen height, near the notification area.
+    // fit content, max 70% of the screen, near the tray
     POINT cursor{};
     GetCursorPos(&cursor);
     MONITORINFO monitor{sizeof(monitor)};

@@ -98,8 +98,7 @@ LRESULT CALLBACK fit_popup(HWND window, UINT message, WPARAM wp, LPARAM lp, UINT
     return result;
 }
 
-// Windows positions cascades separately from the root. Attach only to native popup
-// menus created by our own UI thread during this menu session.
+// only native popups from our own UI thread during this menu
 LRESULT CALLBACK popup_created(int code, WPARAM wp, LPARAM lp) {
     if (code == HC_ACTION) {
         const auto& msg = *reinterpret_cast<CWPSTRUCT*>(lp);
@@ -113,8 +112,7 @@ LRESULT CALLBACK popup_created(int code, WPARAM wp, LPARAM lp) {
 UINT track_companion_menu(HMENU menu, HWND owner, POINT anchor, UINT flags) {
     MONITORINFO monitor{sizeof(monitor)};
     if (GetMonitorInfoW(MonitorFromPoint(anchor, MONITOR_DEFAULTTONEAREST), &monitor)) {
-        // Work-area coordinates exclude the docked taskbar. Align the near edge of the
-        // menu explicitly so Windows cannot place its last rows behind the taskbar.
+        // keep the last rows from going behind the taskbar
         const RECT work = monitor.rcWork;
         anchor.x = std::clamp(anchor.x, work.left, work.right - 1);
         anchor.y = std::clamp(anchor.y, work.top, work.bottom - 1);
@@ -156,8 +154,7 @@ bool measure_menu_item(HWND window, MEASUREITEMSTRUCT& item) {
 }
 
 namespace {
-// Windows' own menu font at the given DPI, created once per DPI and kept for the life of the
-// thread (one font object). Selecting it explicitly keeps menu text matched to the menu's scale.
+// menu font for this DPI, cached per DPI
 HFONT menu_font(UINT dpi) {
     thread_local UINT cached_dpi = 0;
     thread_local HFONT font = nullptr;

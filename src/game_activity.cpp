@@ -13,8 +13,7 @@
 
 namespace companion {
 namespace {
-// Reads little-endian values from a byte span and fails, rather than reading past the end,
-// when the data is shorter than the format says.
+// little-endian reader that throws instead of reading past the end
 class Reader {
 public:
     explicit Reader(std::span<const unsigned char> bytes) : bytes_(bytes) {}
@@ -30,7 +29,7 @@ public:
     int int32() { return static_cast<int>(number()); }
     long long int64() {
         long long value{};
-        std::memcpy(&value,take(8).data(),8); // x86 and x64 are little-endian, like the save
+        std::memcpy(&value,take(8).data(),8);
         return value;
     }
     double float64() {
@@ -38,7 +37,7 @@ public:
         std::memcpy(&value,take(8).data(),8);
         return value;
     }
-    // A length-prefixed block. Reading inside it can never run into the data that follows.
+    // length-prefixed block
     Reader region() {
         int length=int32();
         if(length<0) throw std::runtime_error("Invalid save region");
@@ -83,8 +82,7 @@ std::vector<unsigned char> read_file(const std::filesystem::path& file) {
     return compressed;
 }
 
-// Decompresses a Brotli save. With whole=false it stops once `limit` bytes are available
-// (enough for the header); with whole=true the entire save must fit within `limit`.
+// whole=false stops after `limit` bytes (header only)
 std::vector<unsigned char> decompress(const std::vector<unsigned char>& compressed, size_t limit, bool whole) {
     std::unique_ptr<BrotliDecoderState,decltype(&BrotliDecoderDestroyInstance)> decoder(
         BrotliDecoderCreateInstance(nullptr,nullptr,nullptr),BrotliDecoderDestroyInstance);
@@ -101,10 +99,7 @@ std::vector<unsigned char> decompress(const std::vector<unsigned char>& compress
         if(status==BROTLI_DECODER_RESULT_ERROR)
             throw std::runtime_error(std::string("Cannot decode save: ")+BrotliDecoderErrorString(BrotliDecoderGetErrorCode(decoder.get())));
         if(status==BROTLI_DECODER_RESULT_SUCCESS || !whole) break;
-        // The game writes a flushed stream without Brotli's final-block marker, so consuming
-        // all input is the end of the save. The parser still rejects data that ends early.
-        // "Needs more input" can arrive while decoded bytes are still pending inside the decoder
-        // (the output buffer filled as the input ran out), so only stop once nothing is pending.
+        // No final-block marker: consumed input is the end. Drain pending output first.
         if(status==BROTLI_DECODER_RESULT_NEEDS_MORE_INPUT && !BrotliDecoderHasMoreOutput(decoder.get())) {
             if(remaining) throw std::runtime_error("Truncated save");
             break;
@@ -117,11 +112,10 @@ std::vector<unsigned char> decompress(const std::vector<unsigned char>& compress
     return output;
 }
 
-// The save version this reader was built and verified against (Steam Early Access).
+// Steam Early Access
 constexpr int known_save_version = 31;
 
-// With strict=true an unknown version is rejected; otherwise it is read with the known layout
-// and the caller must verify the result (see parse_progress).
+// strict=false reads unknown versions; caller verifies (parse_progress)
 ActivitySnapshot read_header(Reader& reader, bool strict, int& version) {
     version=reader.int32();
     if(strict && version!=known_save_version) throw UnsupportedSaveVersion(version);
@@ -129,38 +123,36 @@ ActivitySnapshot read_header(Reader& reader, bool strict, int& version) {
     auto id = reader.take(result.save_id.size());
     std::copy(id.begin(), id.end(), result.save_id.begin());
     result.character=reader.text();
-    reader.text(); // Game mode.
+    reader.text(); // game mode
     result.save_ticks=static_cast<unsigned long long>(reader.int64()) & 0x3fffffffffffffffULL;
     result.skill=reader.text();
-    reader.text(); // Entity icon.
+    reader.text(); // entity icon
     result.action=reader.text();
-    reader.text(); // Action icon.
+    reader.text(); // action icon
     return result;
 }
 
-// "MelvorBase:Woodcutting" -> "Woodcutting"
 std::wstring display_name(const std::wstring& id) {
     auto colon=id.rfind(L':');
     return colon==std::wstring::npos ? id : id.substr(colon+1);
 }
 
-// The bank's "Inventory" entry: a header, then tabs of items. Each item is a quantity,
-// placeholder and locked flags, and an item ID. Quantities are summed across tabs.
+// Bank inventory: header, then tabs of (quantity, flags, item ID). Summed across tabs.
 void read_inventory(Reader inventory, std::map<std::wstring, long long>& items) {
-    inventory.int32(); // Unknown; 0 in observed saves.
+    inventory.int32(); // unknown, 0 so far
     int tabs=inventory.int32();
     if(tabs<0 || tabs>1000) throw std::runtime_error("Invalid bank tab count");
     for(int tab=0;tab<tabs;++tab) {
-        inventory.take(4+4+4+1+1); // Tab settings.
+        inventory.take(4+4+4+1+1); // tab settings
         int count=inventory.int32();
         if(count<0 || count>100000) throw std::runtime_error("Invalid bank item count");
         for(int i=0;i<count;++i) {
             int quantity=inventory.int32();
-            inventory.take(2); // Placeholder and locked flags.
+            inventory.take(2); // placeholder, locked
             auto id=inventory.text();
             if(quantity>0) items[readable_name(id)]+=quantity;
         }
-        inventory.text(); // Tab name or icon.
+        inventory.text(); // tab name/icon
         int extras=inventory.int32();
         if(extras<0 || extras>100000) throw std::runtime_error("Invalid bank tab data");
         for(int i=0;i<extras;++i) { inventory.take(2); inventory.text(); }
@@ -180,12 +172,10 @@ std::wstring readable_name(const std::wstring& id) {
     for(size_t i=0;i<name.size();++i) {
         wchar_t c=name[i];
         bool upper=iswupper(c)!=0;
-        // Break before a capital that follows a lowercase letter ("RawShrimp"), and before the
-        // last capital of a run followed by lowercase ("XPBoost" -> "XP Boost"). Digits stay
-        // attached ("2H").
+        // "RawShrimp" -> "Raw Shrimp", "XPBoost" -> "XP Boost", digits stay ("2H")
         if(i>0 && upper && (iswlower(name[i-1])
                             || (iswupper(name[i-1]) && i+1<name.size() && iswlower(name[i+1])))) {
-            // Some IDs keep "of" lowercase ("BucketofSand"); split it off, but not from "Roof".
+            // "BucketofSand", but not "Roof"
             size_t n=result.size();
             if(n>3 && result.ends_with(L"of") && iswlower(result[n-3]) && result[n-3]!=L'o') result.insert(n-2,L" ");
             result+=L' ';
@@ -206,15 +196,13 @@ ActivitySnapshot parse_activity_header(std::span<const unsigned char> bytes) {
     return read_header(reader,true,version);
 }
 ActivitySnapshot read_activity_save(const std::filesystem::path& file) {
-    // Only the header is needed. Stop after a bounded prefix rather than decoding inventories.
+    // header only
     auto decoded=decompress(read_file(file),32*1024,false);
     return parse_activity_header(decoded);
 }
 
 long long xp_for_level(int level) {
-    // Classic RuneScape curve, which Melvor uses: the sum of floor(n + 300 * 2^(n/7)) for
-    // n below the level, divided by 4. Checked against a real save, whose skill levels
-    // computed this way add up to the total level stored in its header.
+    // RuneScape XP curve. Levels from a real save add up to its stored total.
     double points=0;
     for(int n=1;n<level;++n) points+=std::floor(n+300*std::pow(2.0,n/7.0));
     return static_cast<long long>(std::floor(points/4));
@@ -233,16 +221,14 @@ ProgressSnapshot parse_progress(std::span<const unsigned char> bytes) {
     result.total_level=reader.int32();
     result.gp=reader.int64();
     result.slayer_coins=reader.int64();
-    reader.take(1); // Demo flag.
-    // Then named sections (one per skill or system), each a region of named sub-regions.
-    // A skill section holds "Experience": a 64-bit float XP followed by a 32-bit level.
+    reader.take(1); // demo flag
+    // named sections; skills hold Experience (double XP)
     int sections=reader.int32();
     if(sections<0 || sections>100000) throw std::runtime_error("Invalid save section count");
     for(int i=0;i<sections;++i) {
         auto name=reader.text();
         auto section=reader.region();
-        // Not every section uses the entry layout. A section that does not parse is skipped:
-        // its length prefix already tells us where the next one starts.
+        // skip sections that don't parse; the length prefix says where the next starts
         try {
             int entries=section.int32();
             if(entries<0 || entries>100000) continue;
@@ -255,7 +241,7 @@ ProgressSnapshot parse_progress(std::span<const unsigned char> bytes) {
                     continue;
                 }
                 if(key==L"Statistics" && (name==L"MelvorBase:Combat" || name==L"MelvorBase:Thieving")) {
-                    // Statistics use the same entry layout; counters hold an 8-byte double.
+                    // same layout, counters are doubles
                     try {
                         while (value.size()) {
                             int stats=value.int32();
@@ -279,15 +265,14 @@ ProgressSnapshot parse_progress(std::span<const unsigned char> bytes) {
                                 }
                             }
                         }
-                    } catch(const std::runtime_error&) {} // statistics are optional extras
+                    } catch(const std::runtime_error&) {} // optional
                     continue;
                 }
                 if(key==L"Inventory" && display_name(name)==L"Bank") {
-                    // A bank that does not parse leaves items empty; skills and totals still count.
                     try { read_inventory(value,result.items); } catch(const std::runtime_error&) { result.items.clear(); }
                     continue;
                 }
-                // Save version 31 stores only the XP (8 bytes); some builds also store the level.
+                // v31 stores XP only; some builds add the level
                 if(key==L"Experience" && (value.size()==8 || value.size()==12)) {
                     SkillProgress skill;
                     skill.xp=value.float64();
@@ -299,10 +284,7 @@ ProgressSnapshot parse_progress(std::span<const unsigned char> bytes) {
             continue;
         }
     }
-    // A game update may change the version number without changing this layout. Accept an
-    // unknown version only if the result checks out: plenty of skills, and their levels add up
-    // exactly to the total level stored in the header. A changed layout would fail this rather
-    // than produce plausible wrong numbers.
+    // Unknown version: accept only if the skill levels add up to the stored total.
     if(version!=known_save_version) {
         int sum=0;
         for(const auto& [name,skill]:result.skills) sum+=skill.level;
@@ -356,7 +338,7 @@ ProgressChange compare_progress(const ProgressSnapshot& before, const ProgressSn
         change.skills.push_back({name,now.xp-xp_before,level_before,now.level,std::max(0.0,next)});
     }
     std::sort(change.skills.begin(),change.skills.end(),[](const SkillGain& a,const SkillGain& b) { return a.xp>b.xp; });
-    // Items present in either snapshot; a missing entry means zero.
+    // missing = zero
     std::map<std::wstring,long long> delta;
     for(const auto& [name,count]:after.items) delta[name]+=count;
     for(const auto& [name,count]:before.items) delta[name]-=count;
@@ -382,7 +364,6 @@ std::wstring duration_text(std::chrono::seconds elapsed) {
     return minutes ? std::format(L"{}m",minutes) : std::format(L"{}s",seconds);
 }
 
-// The death line: how many times, and how long the character then sat with nothing to do.
 std::wstring death_text(const ProgressChange& change) {
     std::wstring text=change.deaths==1 ? std::wstring(L"Your character died") : std::format(L"Your character died {} times",change.deaths);
     if(change.possible_thieving_death) text=L"Possible Thieving death";
@@ -398,7 +379,7 @@ std::wstring describe_progress(const ProgressSnapshot& before, const ProgressSna
 std::wstring describe_change(const ProgressChange& change, size_t max_skills) {
     std::wstring text;
     auto line=[&](const std::wstring& value) { if(!text.empty()) text+=L"\n"; text+=value; };
-    // A death is the most important news, so it comes first.
+    // death first
     if(change.deaths>0) line(death_text(change));
     for(size_t i=0;i<change.skills.size() && i<max_skills;++i) {
         const auto& gain=change.skills[i];
@@ -430,7 +411,7 @@ void GameActivity::refresh() noexcept {
         try {
             result=read_activity_save(newest->path);
         } catch(const UnsupportedSaveVersion&) {
-            // A newer save format: read the whole save, which verifies itself (see parse_progress).
+            // newer format: full read, verified
             result=read_progress_save(newest->path).activity;
         }
         if(std::filesystem::last_write_time(newest->path)!=newest->modified) throw std::runtime_error("Save is being updated");
@@ -443,7 +424,7 @@ void GameActivity::refresh() noexcept {
         available_=false;
         error_=L"Save unavailable or unsupported";
         strip_error_=L"Activity unavailable";
-        modified_={}; // retry this save on the next check
+        modified_={}; // retry next check
     }
 }
 std::wstring GameActivity::strip() const {

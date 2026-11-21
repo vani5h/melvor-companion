@@ -42,7 +42,7 @@ Gdiplus::RectF rectf(const RECT& r) {
 }
 void prepare(Gdiplus::Graphics& graphics) {
     graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
-    // Pixel centers sit at .5, so shapes on whole coordinates cover whole pixels and stay crisp.
+    // pixel centers are at .5
     graphics.SetPixelOffsetMode(Gdiplus::PixelOffsetModeHalf);
 }
 namespace {
@@ -62,7 +62,7 @@ void fill_rounded(Gdiplus::Graphics& graphics, Gdiplus::RectF r, float radius, C
     graphics.FillPath(&brush, &path);
 }
 void stroke_rounded(Gdiplus::Graphics& graphics, Gdiplus::RectF r, float radius, COLORREF stroke, float width) {
-    // Inset by half the pen width so the line stays inside r.
+    // inset by half the pen
     r.Inflate(-width / 2, -width / 2);
     Gdiplus::GraphicsPath path;
     rounded_path(path, r, radius);
@@ -85,7 +85,6 @@ void draw_button(const DRAWITEMSTRUCT& item, ButtonStyle style, HFONT body, HFON
     bool focus_ring = (item.itemState & ODS_FOCUS) && !(item.itemState & ODS_NOFOCUSRECT);
     HDC dc = item.hDC;
     RECT r = item.rcItem;
-    // Paint the whole rectangle first, so no stale pixels show around the rounded corners.
     SetDCBrushColor(dc, p.background);
     FillRect(dc, &r, static_cast<HBRUSH>(GetStockObject(DC_BRUSH)));
     float radius = dipf(parent, 8);

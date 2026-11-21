@@ -54,8 +54,7 @@ bool HiddenWindow::hide(const WindowInfo& target)
 bool HiddenWindow::recover_previous_hide(const WindowInfo& target)
 {
     if (owns_window() || !GetPropW(target.handle, marker) || !matches_target(target)) return false;
-    // The marker lives on the game window. Its old value belonged to the previous
-    // process and must never be dereferenced. Only the single-instance host claims it.
+    // the old value belongs to the dead process: never dereference it
     if (!SetPropW(target.handle, marker, this)) return false;
     window_ = target.handle;
     pid_ = target.pid;
@@ -66,7 +65,7 @@ bool HiddenWindow::recover_previous_hide(const WindowInfo& target)
 bool HiddenWindow::restore() noexcept
 {
     if (owns_window()) {
-        // Keep its existing size and show state, and put it behind the user's work.
+        // behind the user's current window
         if (!IsWindowVisible(window_) &&
             (!SetWindowPos(window_, HWND_BOTTOM, 0, 0, 0, 0,
                            SWP_SHOWWINDOW | SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE)

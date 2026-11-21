@@ -14,8 +14,7 @@ void Preferences::write_dword(const wchar_t* name, DWORD value, const char* what
 }
 DWORD Preferences::notifications() const {
     DWORD flags = read_dword(L"Notifications", notify_away | notify_idle | notify_hints | notify_death);
-    // Options added later start on for settings saved before they existed, like a new install.
-    // Marker bits record that a saved value already decided them: 0x80 hints, 0x100 death.
+    // options added later default on; marker bits 0x80 hints, 0x100 death
     if (!(flags & 0x80)) flags |= notify_hints;
     if (!(flags & 0x100)) flags |= notify_death;
     return flags & 31;

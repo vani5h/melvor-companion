@@ -43,17 +43,16 @@ void CALLBACK game_changed(HWINEVENTHOOK, DWORD event, HWND window, LONG object,
     if (window && object == OBJID_WINDOW && child == CHILDID_SELF)
         PostMessageW(event_host, game_event, event, reinterpret_cast<LPARAM>(window));
 }
-constexpr UINT update_event = WM_APP + 3; // the background update check finished
-// Sent between copies of the app, so it is registered system-wide rather than a WM_APP value.
+constexpr UINT update_event = WM_APP + 3;
+// registered, not WM_APP: other copies of the app receive it
 UINT already_running_message() {
     static const UINT message = RegisterWindowMessageW(L"MelvorSwitch.AlreadyRunning");
     return message;
 }
 constexpr UINT_PTR tooltip_timer = 1;
 constexpr UINT_PTR update_timer = 2;
-constexpr UINT_PTR death_timer = 3; // follows saves for deaths while the game is visible
+constexpr UINT_PTR death_timer = 3;
 constexpr UINT update_interval_ms = 24 * 60 * 60 * 1000;
-// Melvor Idle 2's Steam app ID; steam:// links ask the Steam client to start it.
 constexpr const wchar_t* steam_launch = L"steam://rungameid/3218350";
 
 enum Command : UINT { hide_game = 1, restore_game, quit, toggle_keys = 10, configure_key,
@@ -62,19 +61,18 @@ enum Command : UINT { hide_game = 1, restore_game, quit, toggle_keys = 10, confi
                       launch_game = 40, toggle_away, toggle_idle, toggle_updates, open_update, toggle_detailed, about_app, toggle_death };
 
 
-// A copy of `base` with a solid frame around its edge, made at runtime from its pixels.
-// Returns null on failure; the caller owns the result (DestroyIcon).
+// copy of base with a solid frame; caller destroys it
 HICON framed_icon(HICON base, COLORREF frame) {
     ICONINFO info{};
     if (!GetIconInfo(base, &info)) return nullptr;
-    // GetIconInfo hands us copies of the icon's bitmaps; they must be deleted.
+    // GetIconInfo returns copies
     std::unique_ptr<std::remove_pointer_t<HBITMAP>, decltype(&DeleteObject)> source_color(info.hbmColor, DeleteObject);
     std::unique_ptr<std::remove_pointer_t<HBITMAP>, decltype(&DeleteObject)> source_mask(info.hbmMask, DeleteObject);
     BITMAP shape{};
     if (!info.hbmColor || !GetObjectW(info.hbmColor, sizeof(shape), &shape)) return nullptr;
     int width = shape.bmWidth, height = shape.bmHeight;
     BITMAPINFO format{};
-    format.bmiHeader = {sizeof(BITMAPINFOHEADER), width, -height, 1, 32, BI_RGB}; // top-down BGRA
+    format.bmiHeader = {sizeof(BITMAPINFOHEADER), width, -height, 1, 32, BI_RGB}; // top-down
     std::vector<DWORD> pixels(static_cast<size_t>(width) * height);
     HDC screen = GetDC(nullptr);
     bool read = GetDIBits(screen, info.hbmColor, 0, height, pixels.data(), &format, DIB_RGB_COLORS) == height;
@@ -88,18 +86,17 @@ HICON framed_icon(HICON base, COLORREF frame) {
     for (int y = 0; y < height; ++y)
         for (int x = 0; x < width; ++x)
             if (x < thickness || y < thickness || x >= width - thickness || y >= height - thickness)
-                pixels[static_cast<size_t>(y) * width + x] = red; // opaque, so alpha is 0xFF
+                pixels[static_cast<size_t>(y) * width + x] = red;
     std::copy(pixels.begin(), pixels.end(), static_cast<DWORD*>(bits));
-    // With per-pixel alpha the mask is ignored, but an icon still needs one; all zero is opaque.
+    // ignored with per-pixel alpha, but required
     std::vector<BYTE> zero(static_cast<size_t>((width + 15) / 16 * 2) * height);
     std::unique_ptr<std::remove_pointer_t<HBITMAP>, decltype(&DeleteObject)> mask(
         CreateBitmap(width, height, 1, 1, zero.data()), DeleteObject);
     ICONINFO made{TRUE, 0, 0, mask.get(), framed_color.get()};
-    return CreateIconIndirect(&made); // copies the bitmaps
+    return CreateIconIndirect(&made);
 }
 
-// Shared between the tray and a background update check. The worker owns a reference, so the
-// state outlives the tray if the app exits mid-check.
+// the worker keeps a reference, so this can outlive the tray
 struct UpdateState {
     std::mutex lock;
     bool running{};
@@ -107,13 +104,11 @@ struct UpdateState {
     std::string error;
 };
 
-// The About box: version, the unofficial-status notice, what the app touches, and links.
-// TaskDialog (common controls v6) gives clickable links without a custom window.
 void show_about(HWND owner) {
     std::wstring logs;
     PWSTR raw{};
     if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &raw))) {
-        logs = std::wstring(raw) + L"\\Melvor Companion"; // historical folder name, kept for continuity
+        logs = std::wstring(raw) + L"\\Melvor Companion"; // old folder name, kept so logs stay in one place
         CoTaskMemFree(raw);
     }
     auto repo = companion::update_repo();
@@ -183,8 +178,7 @@ struct Tray {
         hidden_icon=load(static_cast<WORD>(102+icon_style*2));
         missing_icon=load(109);
         dead_icon=load(110);
-        // The taskbar widget draws the 28 px entry, which holds its art pixel-for-pixel.
-        // 28 px is not a system icon size, so it is loaded without LR_SHARED and owned here.
+        // 28 px isn't a system icon size, so no LR_SHARED
         auto load_art=[&](WORD id) {
             return OwnedIcon(static_cast<HICON>(LoadImageW(instance,MAKEINTRESOURCEW(id),IMAGE_ICON,
                 companion::TaskbarWidget::art_icon_size,companion::TaskbarWidget::art_icon_size,0)),DestroyIcon);
@@ -201,9 +195,8 @@ struct Tray {
     }
     OwnedIcon widget_art_normal{nullptr, DestroyIcon}, widget_art_hidden{nullptr, DestroyIcon};
     OwnedIcon widget_art_missing{nullptr, DestroyIcon}, widget_art_dead{nullptr, DestroyIcon};
-    OwnedIcon idle_icon{nullptr, DestroyIcon}; // the hidden icon inside a red box
+    OwnedIcon idle_icon{nullptr, DestroyIcon};
 
-    // The notification-area icon for the current state.
     HICON state_icon(bool hidden_now) const {
         if (!hidden_now && observed.empty()) return missing_icon;
         if (died()) return dead_icon;
@@ -212,26 +205,26 @@ struct Tray {
     }
 
     NOTIFYICONDATAW icon{};
-    bool icon_hidden{}; // NIS_HIDDEN: the taskbar widget is shown in its place
+    bool icon_hidden{};
     UINT explorer_started = RegisterWindowMessageW(L"TaskbarCreated");
     bool timing_session{};
     bool hide_launch = prefs.hide_on_launch();
-    std::map<HWND, bool> observed; // verified windows and whether their first visible launch was handled
+    std::map<HWND, bool> observed; // window -> first launch handled
     DWORD taskbar = prefs.taskbar_options();
     companion::GameActivity activity;
-    companion::TaskbarWidget widget; // the optional strip on the taskbar (taskbar_widget.cpp)
+    companion::TaskbarWidget widget;
     std::wstring hover_text;
     DWORD notify_flags = prefs.notifications();
-    std::optional<companion::ProgressSnapshot> away_baseline; // the save as it was when the game was hidden
-    bool idle_warned{}; // the idle notification was sent during this hide
-    bool idle_now{};    // hidden and the latest save shows no activity: show the red highlight
-    companion::DeathTracker death_tracker; // dead or alive, from successive saves (death_tracker.hpp)
+    std::optional<companion::ProgressSnapshot> away_baseline;
+    bool idle_warned{};
+    bool idle_now{};
+    companion::DeathTracker death_tracker;
     std::future<bool> panel_result;
     companion::DeathTracker::Id panel_character{};
     HWND panel_window{};
     DWORD panel_pid{};
     std::chrono::steady_clock::time_point next_panel_check{};
-    bool death_warned{};             // notified about the current death
+    bool death_warned{};
     using SaveTime = std::filesystem::file_time_type;
     std::optional<SaveTime> hide_start, death_checked_save;
     bool died() const { return (notify_flags & companion::Preferences::notify_death) && death_tracker.dead(); }
@@ -240,7 +233,6 @@ struct Tray {
     std::optional<companion::Release> available_update;
     std::wstring announced_update;
 
-    // Windows shows this as a toast notification, and holds it during Focus or Do Not Disturb.
     void notify(const std::wstring& title, const std::wstring& text) {
         NOTIFYICONDATAW note = icon;
         note.uFlags = NIF_INFO;
@@ -250,7 +242,6 @@ struct Tray {
         if (!Shell_NotifyIconW(NIM_MODIFY, &note)) companion::log_event("Could not show a notification.");
     }
 
-    // Called whenever the companion hides the game.
     void began_hiding() {
         idle_warned = false;
         if (!(notify_flags & companion::Preferences::notify_death)) death_tracker.clear();
@@ -263,7 +254,6 @@ struct Tray {
         }
     }
 
-    // Remember the save as it is now, to compare against when the game is shown.
     void capture_baseline() {
         away_baseline.reset();
         if (!(notify_flags & (companion::Preferences::notify_away | companion::Preferences::notify_detailed))) return;
@@ -274,7 +264,6 @@ struct Tray {
         }
     }
 
-    // Called after the game is shown again: compare the newest save with the one from hiding.
     void report_away(std::chrono::seconds hidden_for, SaveTime shown_at) {
         if (!away_baseline) return;
         if (!(notify_flags & (companion::Preferences::notify_away | companion::Preferences::notify_detailed))) { away_baseline.reset(); return; }
@@ -285,13 +274,13 @@ struct Tray {
             if (!save) return;
             auto now = companion::read_progress_save(save->path);
             if (baseline.activity.save_id != now.activity.save_id) return;
-            observe_progress(now); // include the last save even if the next poll hasn't fired
+            observe_progress(now);
             bool new_save = now.saved_at != baseline.saved_at;
             auto change = companion::compare_progress(baseline, now);
             change.possible_thieving_death = death_tracker.hidden_thieving_death() && !change.deaths;
             change.idle_after_death = death_tracker.hidden_idle(shown_at);
             if (change.idle_after_death) {
-                // A death that overlapped the hide, including one just before hiding.
+                // includes a death just before hiding
                 change.deaths = std::max<long long>(change.deaths, 1);
             }
             if (!change.deaths && hidden_for < std::chrono::minutes(1)) return;
@@ -310,9 +299,7 @@ struct Tray {
         }
     }
 
-    // While hidden, the latest save showing no activity turns on the red idle highlight. The
-    // notification is sent only once per hide, the first time the game is seen idle. A dead
-    // character is idle too; death has its own look and notification, so idle stands aside.
+    // notify once per hide. death has its own look
     void check_idle(bool hidden_now) {
         idle_now = false;
         if (!hidden_now || !(notify_flags & companion::Preferences::notify_idle)) return;
@@ -324,7 +311,6 @@ struct Tray {
         }
     }
 
-    // The death count in the newest save, or nullopt if it cannot be read.
     companion::DeathEvidence saved_deaths() {
         try {
             auto save = companion::read_progress_save(activity.source());
@@ -336,8 +322,7 @@ struct Tray {
         return {};
     }
 
-    // Follows each new save (Melvor saves about every 10 s), hidden or not, so a death just before
-    // hiding still counts. Combat and Thieving both need a baseline before the first idle save.
+    // every new save, hidden or not
     template<class ReadDeaths>
     void observe_save(const companion::ActivitySnapshot& now, SaveTime stamp, const std::filesystem::path& source, ReadDeaths read_deaths) {
         if (death_tracker.select_character(now.save_id)) {
@@ -395,8 +380,7 @@ struct Tray {
         panel_window = target;
         panel_character = activity.snapshot().save_id;
         panel_pid = pid;
-        // PrintWindow can wait on the game. Only one capture can be outstanding,
-        // and the worker owns no tray state, even if the app exits mid-capture.
+        // PrintWindow can block on the game: one capture at a time
         std::packaged_task<bool()> capture([target, pid] { return companion::window_has_death_banner(target, pid); });
         try {
             auto result = capture.get_future();
@@ -437,7 +421,6 @@ struct Tray {
             if (update_state->running) return;
             update_state->running = true;
         }
-        // Network I/O on its own thread so a slow connection never freezes the tray.
         std::thread([state = update_state, window = icon.hWnd, repo] {
             std::optional<companion::Release> release;
             std::string error;
@@ -449,7 +432,7 @@ struct Tray {
                 state->error = std::move(error);
                 state->running = false;
             }
-            PostMessageW(window, update_event, 0, 0); // fails harmlessly if the tray has exited
+            PostMessageW(window, update_event, 0, 0);
         }).detach();
     }
 
@@ -470,8 +453,7 @@ struct Tray {
         }
     }
 
-    // Death tracking must see combat saves while the game is visible too (a death just before
-    // hiding still counts), so it gets its own slow timer while the death warning is on.
+    // so deaths are noticed while the game is visible
     void schedule_death_watch() {
         if (notify_flags & companion::Preferences::notify_death) SetTimer(icon.hWnd, death_timer, 5000, nullptr);
         else KillTimer(icon.hWnd, death_timer);
@@ -487,7 +469,6 @@ struct Tray {
         }
     }
 
-    // What the taskbar widget shows; TaskbarWidget decides where and how.
     void update_taskbar() {
         if (!(taskbar & 1)) return;
         auto elapsed = hidden.hidden_duration();
@@ -506,18 +487,16 @@ struct Tray {
         }
         using Art = companion::TaskbarWidget::Art;
         look.art = missing ? Art::missing : died() ? Art::dead : elapsed ? Art::asleep : Art::awake;
-        look.alert = idle_now && !died() && elapsed.has_value(); // death has its own look
+        look.alert = idle_now && !died() && elapsed.has_value();
         if (!missing && died()) {
             std::wstring label = death_tracker.possible_thieving_death() ? L"Possible Thieving death" : L"Died";
             look.text = look.text.empty() ? label : label + L" | " + look.text;
         }
 
-        // The tray icon stands in whenever the widget has no room (or no taskbar).
         show_icon(!widget.update(look));
     }
 
-    // Hides or shows the tray icon without unregistering it. Notifications are sent through
-    // the icon (NIF_INFO), so deleting it would silence them; NIS_HIDDEN keeps it registered.
+    // NIS_HIDDEN, not NIM_DELETE: notifications go through the icon
     void show_icon(bool visible) {
         if (icon_hidden == !visible) return;
         NOTIFYICONDATAW change = icon;
@@ -528,7 +507,7 @@ struct Tray {
     }
 
     void apply_location() {
-        if (taskbar & 1) update_taskbar(); // hides the tray icon if the widget is placed
+        if (taskbar & 1) update_taskbar();
         else {
             widget.remove();
             show_icon(true);
@@ -538,8 +517,7 @@ struct Tray {
 
     bool hide_verified_window(const companion::WindowInfo& target) {
         if ((notify_flags & companion::Preferences::notify_death) && !hidden.owns_window()) {
-            // Once hidden, a GPU window can hand Windows a blank frame. Give the
-            // idle check a bounded head start while the last game frame is visible.
+            // a hidden GPU window can return a blank frame, so look first
             next_panel_check = {};
             check_death(false);
             if (panel_result.valid()) panel_result.wait_for(std::chrono::milliseconds(250));
@@ -608,7 +586,7 @@ struct Tray {
         hidden.refresh_audio();
         const auto elapsed = hidden.hidden_duration();
         account(elapsed);
-        check_death(elapsed.has_value()); // first: a dead character is idle too
+        check_death(elapsed.has_value()); // before check_idle
         check_idle(elapsed.has_value());
         update_taskbar();
         if (taskbar & 1) widget.track_hover();
@@ -651,7 +629,7 @@ struct Tray {
         icon.uCallbackMessage = tray_event;
         auto tip = tooltip(hidden.hidden_duration(), (taskbar & 16) != 0);
         wcsncpy_s(icon.szTip, tip.c_str(), _TRUNCATE);
-        if (Shell_NotifyIconW(NIM_ADD, &icon)) icon_hidden = false; // a new icon starts visible
+        if (Shell_NotifyIconW(NIM_ADD, &icon)) icon_hidden = false;
         else if (!Shell_NotifyIconW(NIM_MODIFY, &icon))
             throw std::runtime_error("Shell_NotifyIconW could not register the Melvor Companion tray icon.");
     }
@@ -672,14 +650,14 @@ struct Tray {
         if (command == toggle_dark) {
             prefs.save_dark_mode(!companion::dark_mode());
             companion::set_dark_mode(!companion::dark_mode());
-            widget.theme_changed(); // tooltip theme, and a redraw
+            widget.theme_changed();
             update_tip();
         }
         if (command == goals)
             companion::edit_goals(icon.hWnd, prefs.notes(), [this](const auto& text) { prefs.save_notes(text); },
                                   prefs.goals_bounds(), [this](const RECT& bounds) { prefs.save_goals_bounds(bounds); });
         if (command == launch_game) {
-            // ShellExecute returns a value above 32 on success.
+            // > 32 means success
             if (reinterpret_cast<INT_PTR>(ShellExecuteW(nullptr, L"open", steam_launch, nullptr, nullptr, SW_SHOWNORMAL)) <= 32)
                 throw std::runtime_error("Steam could not start Melvor. Check that Steam is installed.");
         }
@@ -693,12 +671,12 @@ struct Tray {
             if (!(notify_flags & (companion::Preferences::notify_away | companion::Preferences::notify_detailed)))
                 away_baseline.reset();
             if (command == toggle_detailed && (notify_flags & bit) && hidden.owns_window() && !away_baseline)
-                capture_baseline(); // turned on mid-hide: start measuring from now
+                capture_baseline();
             if (command == toggle_death) {
-                if (!(notify_flags & bit)) death_tracker.clear(); // clears the skull at once
+                if (!(notify_flags & bit)) death_tracker.clear();
                 schedule_death_watch();
             }
-            update_tip();       // turning the idle warning off clears the red highlight at once
+            update_tip();
         }
         if (command == toggle_updates) {
             prefs.save_update_check(!check_updates);
@@ -878,7 +856,6 @@ LRESULT CALLBACK procedure(HWND window, UINT message, WPARAM wp, LPARAM lp) noex
             return 0;
         }
         if (tray && message == already_running_message() && message) {
-            // A second copy was started while this one runs (see hand_off_to_running_copy).
             if (tray->notify_flags & companion::Preferences::notify_hints)
                 tray->notify(L"Melvor Companion is already running",
                              L"Right-click its icon in the notification area for options. It may be under the ^ arrow.");
@@ -892,7 +869,7 @@ LRESULT CALLBACK procedure(HWND window, UINT message, WPARAM wp, LPARAM lp) noex
         if (tray && message == WM_TIMER && wp == tooltip_timer) { tray->update_tip(); return 0; }
         if (tray && message == WM_TIMER && wp == update_timer) { tray->start_update_check(); return 0; }
         if (tray && message == WM_TIMER && wp == death_timer) {
-            // While hidden the one-second tooltip timer already checks; this covers the visible game.
+            // tooltip timer covers the hidden case
             if (!tray->hidden.owns_window()) tray->update_tip();
             return 0;
         }
@@ -919,25 +896,24 @@ LRESULT CALLBACK procedure(HWND window, UINT message, WPARAM wp, LPARAM lp) noex
 
 namespace {
 constexpr const wchar_t* version_property = L"MelvorSwitch.Version";
-// A version as one comparable number (0.1.0 -> 256); 0 when unknown.
+// 0.1.0 -> 256, 0 if unknown
 INT_PTR version_code(std::wstring_view version) {
     auto parts = companion::parse_version(version);
     return parts ? ((*parts)[0] << 16) | ((*parts)[1] << 8) | (*parts)[2] : 0;
 }
 
-// Called when another copy already holds the single-instance lock. Returns true when this copy
-// should continue starting (it replaced an older one), false when it should exit.
+// true if it replaced an older copy and should keep starting
 bool hand_off_to_running_copy(const wchar_t* mutex_name) {
     HWND running = FindWindowW(L"MelvorCompanion.TrayHost", mutex_name);
-    // Builds before 0.1.0 titled the host "Melvor Switch" and published no version.
+    // pre-0.1.0 builds were titled "Melvor Switch"
     if (!running && std::wstring_view(mutex_name) == L"Local\\MelvorCompanion.Tray.29C100B9")
         running = FindWindowW(L"MelvorCompanion.TrayHost", L"Melvor Switch");
-    if (!running) return false; // it is starting up or shutting down; leave it alone
+    if (!running) return false;
     DWORD pid{};
     GetWindowThreadProcessId(running, &pid);
     auto running_version = reinterpret_cast<INT_PTR>(GetPropW(running, version_property));
     if (running_version >= version_code(companion::app_version())) {
-        AllowSetForegroundWindow(pid); // lets its notification come to the front
+        AllowSetForegroundWindow(pid);
         PostMessageW(running, already_running_message(), 0, 0);
         return false;
     }
@@ -946,7 +922,7 @@ bool hand_off_to_running_copy(const wchar_t* mutex_name) {
     if (MessageBoxW(nullptr, question.c_str(), L"Melvor Companion", MB_YESNO | MB_ICONQUESTION | MB_SETFOREGROUND) != IDYES)
         return false;
     std::unique_ptr<void, decltype(&CloseHandle)> process(OpenProcess(SYNCHRONIZE, FALSE, pid), CloseHandle);
-    // The same command as its Exit menu item: restores a hidden game, then quits.
+    // same as Exit: restores the game first
     DWORD_PTR ignored{};
     SendMessageTimeoutW(running, WM_COMMAND, quit, 0, SMTO_ABORTIFHUNG, 5000, &ignored);
     if (process && WaitForSingleObject(process.get(), 5000) == WAIT_OBJECT_0) return true;
@@ -964,7 +940,6 @@ int companion::run_tray(HINSTANCE instance, const std::filesystem::path& image,
         DWORD mutex_status = GetLastError();
         std::unique_ptr<void, decltype(&CloseHandle)> lock(mutex, CloseHandle);
         if (!lock) throw api_failure("CreateMutexW", mutex_status);
-        // Another copy holds the lock: tell it, or replace it if it is older, instead of exiting silently.
         if (mutex_status == ERROR_ALREADY_EXISTS && !hand_off_to_running_copy(mutex_name)) return 0;
         Tray tray{{}, image.empty() ? melvor_image() : image, window_class, Preferences(settings_key)};
         if(std::wstring_view(settings_key)==L"Software\\Melvor Companion" && Preferences::starts_with_windows())
@@ -976,17 +951,15 @@ int companion::run_tray(HINSTANCE instance, const std::filesystem::path& image,
         wc.hInstance = instance;
         wc.lpszClassName = L"MelvorCompanion.TrayHost";
         if (!RegisterClassW(&wc)) throw api_failure("RegisterClassW", GetLastError());
-        // The hidden host window is titled with the lock's name so a second copy finds this
-        // instance (and not a test fixture's), and carries this build's version.
+        // titled with the lock name so a second copy can find this one
         std::unique_ptr<std::remove_pointer_t<HWND>, decltype(&DestroyWindow)> window(
             CreateWindowW(wc.lpszClassName, mutex_name, WS_POPUP, 0, 0, 0, 0,
                           nullptr, nullptr, instance, &tray), DestroyWindow);
         if (!window) throw api_failure("CreateWindowW", GetLastError());
         SetPropW(window.get(), version_property, reinterpret_cast<HANDLE>(version_code(companion::app_version())));
-        tray.widget.set_owner(window.get(), tray_event); // widget clicks open the tray menu
+        tray.widget.set_owner(window.get(), tray_event);
         tray.add_icon(window.get());
         if (!tray.prefs.first_run_done()) {
-            // Windows 11 tucks new tray icons under the ^ arrow, so say where to find this one.
             if (tray.notify_flags & Preferences::notify_hints)
                 tray.notify(L"Melvor Companion is running",
                             L"Find its switch icon in the notification area; it may be under the ^ arrow. "
@@ -1014,7 +987,7 @@ int companion::run_tray(HINSTANCE instance, const std::filesystem::path& image,
             const auto received = GetMessageW(&msg, nullptr, 0, 0);
             if (received == 0) return 0;
             if (received == -1) throw api_failure("GetMessageW", GetLastError());
-            if (companion::summary_message(msg)) continue; // keyboard handling for an open summary
+            if (companion::summary_message(msg)) continue;
             TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }

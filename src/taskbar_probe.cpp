@@ -1,7 +1,6 @@
 #include "taskbar_probe.hpp"
 #include <windows.h>
-// The project defines WIN32_LEAN_AND_MEAN, which leaves COM out of windows.h; UI Automation
-// headers need it.
+// WIN32_LEAN_AND_MEAN drops COM, which UIA needs
 #include <ole2.h>
 #include <uiautomation.h>
 #include <wrl/client.h>
@@ -11,7 +10,7 @@
 #include <thread>
 
 namespace companion {
-using Microsoft::WRL::ComPtr; // releases the COM object when it goes out of scope (RAII for COM)
+using Microsoft::WRL::ComPtr;
 
 struct TaskbarProbe::State {
     std::mutex lock;
@@ -19,12 +18,11 @@ struct TaskbarProbe::State {
     bool started{};
     bool stop{};
     std::chrono::steady_clock::time_point last_request{};
-    HANDLE wake = CreateEventW(nullptr, FALSE, FALSE, nullptr); // auto-reset
+    HANDLE wake = CreateEventW(nullptr, FALSE, FALSE, nullptr);
     ~State() { if (wake) CloseHandle(wake); }
 };
 
 namespace {
-// Rightmost app button on the primary taskbar, as drawn.
 std::optional<TaskbarProbe::Extent> measure(IUIAutomation* automation) {
     HWND bar = FindWindowW(L"Shell_TrayWnd", nullptr);
     RECT bounds{};
@@ -50,7 +48,7 @@ std::optional<TaskbarProbe::Extent> measure(IUIAutomation* automation) {
         RECT rect{};
         if (FAILED(buttons->GetElement(i, &button)) || !button || FAILED(button->get_CurrentBoundingRectangle(&rect)))
             continue;
-        // Only buttons drawn on this taskbar (not overflow flyouts or other monitors).
+        // this taskbar only, not overflow or other monitors
         if (rect.right <= rect.left || rect.left < bounds.left || rect.right > bounds.right
             || rect.bottom <= bounds.top || rect.top >= bounds.bottom)
             continue;
@@ -62,7 +60,6 @@ std::optional<TaskbarProbe::Extent> measure(IUIAutomation* automation) {
 }
 
 void run(std::shared_ptr<TaskbarProbe::State> state) {
-    // UI Automation needs COM on this thread; the multithreaded apartment suits a worker.
     if (FAILED(CoInitializeEx(nullptr, COINIT_MULTITHREADED))) return;
     {
         ComPtr<IUIAutomation> automation;
@@ -72,9 +69,9 @@ void run(std::shared_ptr<TaskbarProbe::State> state) {
                 {
                     std::unique_lock guard(state->lock);
                     if (state->stop) break;
-                    // Idle (no wake-ups) once the tray has not asked for 30 seconds, e.g. tray mode.
+                    // stop waking up after 30 s without a request
                     if (steady_clock::now() - state->last_request > seconds(30)) {
-                        guard.unlock(); // never hold the lock while waiting
+                        guard.unlock();
                         WaitForSingleObject(state->wake, INFINITE);
                         guard.lock();
                         if (state->stop) break;
@@ -85,12 +82,11 @@ void run(std::shared_ptr<TaskbarProbe::State> state) {
                     std::lock_guard guard(state->lock);
                     state->end = measured;
                 }
-                // Measure again when asked (placement inputs changed) or every 10 s, which
-                // catches apps opening and closing.
+                // on request, or every 10 s to catch apps opening and closing
                 WaitForSingleObject(state->wake, 10000);
             }
         }
-    } // releases COM objects before CoUninitialize
+    } // before CoUninitialize
     CoUninitialize();
 }
 }
@@ -103,8 +99,7 @@ TaskbarProbe::~TaskbarProbe() {
         state_->stop = true;
     }
     if (state_->wake) SetEvent(state_->wake);
-    // The thread is detached and holds its own reference to the state, so the tray never waits
-    // for a slow call into Explorer while exiting.
+    // detached with its own reference, so exit never waits on Explorer
 }
 
 void TaskbarProbe::request() {

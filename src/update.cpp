@@ -20,7 +20,7 @@ std::optional<std::array<int, 3>> parse_version(std::wstring_view text) {
             parts[part] = parts[part] * 10 + (c - L'0');
             digits = true;
         } else if (c == L'.' && digits) {
-            if (part == 2) break; // a fourth part (1.2.3.4) does not change the comparison
+            if (part == 2) break;
             ++part;
             digits = false;
         } else if ((c == L'-' || c == L'+') && digits) {
@@ -35,12 +35,11 @@ std::optional<std::array<int, 3>> parse_version(std::wstring_view text) {
 
 bool is_newer(std::wstring_view candidate, std::wstring_view current) {
     auto a = parse_version(candidate), b = parse_version(current);
-    return a && b && *a > *b; // std::array compares element by element
+    return a && b && *a > *b;
 }
 
 std::optional<std::wstring> release_tag(std::string_view json) {
-    // A full JSON parser is unnecessary for one known field. Tags are short and plain, so
-    // anything unusual (escapes, long values) is rejected rather than interpreted.
+    // one known field, so no JSON parser; unusual values are rejected
     auto key = json.find("\"tag_name\"");
     if (key == std::string_view::npos) return std::nullopt;
     auto at = json.find_first_not_of(" \t\r\n", key + 10);
@@ -66,7 +65,7 @@ using Internet = std::unique_ptr<void, InternetDeleter>;
 
 std::optional<Release> fetch_latest_release(const std::wstring& repo) {
     if (repo.empty() || repo.find(L'/') == std::wstring::npos) return std::nullopt;
-    // GitHub requires a User-Agent; it names the app and version only.
+    // GitHub requires a User-Agent
     auto agent = L"MelvorCompanion/" + app_version();
     Internet session(WinHttpOpen(agent.c_str(), WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, WINHTTP_NO_PROXY_NAME,
                                  WINHTTP_NO_PROXY_BYPASS, 0));
@@ -85,7 +84,7 @@ std::optional<Release> fetch_latest_release(const std::wstring& repo) {
     DWORD status{}, size = sizeof(status);
     WinHttpQueryHeaders(request.get(), WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER, WINHTTP_HEADER_NAME_BY_INDEX,
                         &status, &size, WINHTTP_NO_HEADER_INDEX);
-    if (status == 404) return std::nullopt; // no published release yet
+    if (status == 404) return std::nullopt; // no release yet
     if (status != 200) throw std::runtime_error("GitHub returned HTTP " + std::to_string(status));
     std::string body;
     for (;;) {

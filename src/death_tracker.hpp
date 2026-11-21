@@ -8,23 +8,18 @@
 #include <string>
 
 namespace companion {
-// Decides from successive saves whether the character is dead.
-//
-// Melvor 2 leaves a dead character idle until the player clicks Respawn, and the save has no
-// "dead" flag. So a death is: the combat death count rising above its value in the latest save
-// that showed combat, followed by an idle save. It lasts until a save shows any activity again.
-//
-// Reading the death count means decoding the whole save, so `read_deaths` is called only for
-// saves showing combat, and once when an idle stretch begins. Skilling and plain idling stay cheap.
-// Pure logic with no Windows calls, so the desktop-free tests can replay save sequences.
+// Death detection from successive saves. There's no "dead" flag: a dead character just
+// goes idle until Respawn. So: the combat death count goes up, then an idle save. It lasts until
+// any activity shows again. Reading the count decodes the whole save, so it only happens on
+// combat saves and once per idle stretch.
 class DeathTracker {
 public:
     using Time = std::filesystem::file_time_type;
     enum class Event { none, died, respawned };
     using Id = std::array<unsigned char, 16>;
 
-    // A backup can supply the missing active observation on startup. Melvor may give
-    // both files the same modification time when rotating them, so use the header times.
+    // startup: a backup can supply the missing active save. Use header times, since Melvor
+    // can give both files the same mtime.
     static bool recent_active_backup(const ActivitySnapshot& before, const ActivitySnapshot& now) {
         constexpr unsigned long long minute = 60ULL * 10'000'000;
         return now.skill.empty() && now.action.empty() && before.save_id == now.save_id &&
@@ -43,14 +38,12 @@ public:
         completed_idle_.reset();
         hidden_thieving_ = false;
     }
-    // A full save taken at hide time also provides a baseline if combat starts and
-    // ends between polls. The enemy is unknown when no combat save was observed.
+    // baseline from the hide-time save, in case combat starts and ends between polls
     void seed_count(std::optional<long long> count) {
         if (!deaths_in_combat_) deaths_in_combat_ = count;
     }
 
-    // Feed each new save once. `combat` is true when the save's activity is combat; `enemy` is
-    // what is being fought. `read_deaths()` returns the save's death count (or nullopt).
+    // call once per new save
     template <class ReadDeaths>
     Event observe(bool idle, bool combat, const std::wstring& enemy, Time saved_at, ReadDeaths read_deaths,
                   bool thieving = false) {
@@ -79,8 +72,8 @@ public:
         if (!sample.combat && !sample.thieving_damage) return Event::none;
         idle_checked_ = true;
         bool confirmed = sample.combat && deaths_in_combat_ && *sample.combat > *deaths_in_combat_;
-        // A Thieving death stops the action and refills shared HP. Eating and stopping
-        // between saves can mimic that recovery, so this signature is explicitly inferred.
+        // Thieving death stops the action and refills HP. Eating then stopping looks the same,
+        // so this one is only a possible death.
         bool inferred = thieving_before_ && thieving_before_->health && *thieving_before_->health > 0 &&
             sample.health && *sample.health >= *thieving_before_->health &&
             sample.thieving_damage && thieving_before_->thieving_damage &&
@@ -90,14 +83,13 @@ public:
 
         dead_ = true;
         if (sample.combat) deaths_in_combat_ = sample.combat;
-        died_at_ = saved_at; // the first idle save showing the death: within one save interval of it
+        died_at_ = saved_at; // first idle save after the death
 
         return Event::died;
     }
 
     bool dead() const { return dead_; }
-    // The open death panel confirms the current state even with two idle saves.
-    // Only the observation time is known when the companion starts after death.
+    // the YOU DIED panel confirms it even across two idle saves
     void observe_death_panel(Time now) {
         if (!dead_) died_at_ = now;
         dead_ = true;
@@ -127,7 +119,7 @@ private:
     std::optional<Time> hidden_since_;
     std::optional<std::chrono::seconds> completed_idle_;
     bool dead_{};
-    bool idle_checked_{}; // this idle stretch was already checked for a death
+    bool idle_checked_{};
     std::optional<long long> deaths_in_combat_;
     std::wstring enemy_;
     std::optional<Time> died_at_;

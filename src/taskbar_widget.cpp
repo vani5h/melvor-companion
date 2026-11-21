@@ -11,25 +11,21 @@
 
 namespace companion {
 namespace {
-// The switch art's drawn rows inside the 28 px icon entry.
+// drawn rows inside the 28 px entry
 constexpr int art_width = TaskbarWidget::art_icon_size, art_height = 16, art_top = (art_width - art_height) / 2;
 constexpr wchar_t window_class[] = L"MelvorCompanion.TaskbarWidget";
-constexpr wchar_t tooltip_property[] = L"MelvorCompanion.WidgetTooltip"; // read by the desktop test
+constexpr wchar_t tooltip_property[] = L"MelvorCompanion.WidgetTooltip";
 
-// True while a fullscreen app (a game, a video) is in front on the widget's monitor.
-// Explorer keeps the taskbar in the z-order underneath, so the widget can still get clicks
-// and hover there; opening the menu then takes the foreground and tabs the player out.
-// Not SHQueryUserNotificationState: it reported QUNS_RUNNING_D3D_FULL_SCREEN while the
-// taskbar itself was in front, so it would block the widget whenever a game runs behind.
+// Fullscreen app in front: the taskbar still gets clicks underneath, and opening the menu tabs the player out.
+// Not SHQueryUserNotificationState: it reports D3D fullscreen while a game is only running behind.
 bool fullscreen_app_in_front(HWND widget) {
-    // Both exclusive and borderless fullscreen put a window covering the whole monitor in front.
     HWND front = GetForegroundWindow();
-    if (!front || IsZoomed(front)) return false; // a maximized window leaves the taskbar usable
+    if (!front || IsZoomed(front)) return false; // maximized leaves the taskbar usable
     wchar_t name[64]{};
     GetClassNameW(front, name, 64);
     const std::wstring_view kind(name);
     if (kind == L"Progman" || kind == L"WorkerW" || kind == L"Shell_TrayWnd" || kind == L"Shell_SecondaryTrayWnd")
-        return false; // the desktop or the taskbar itself
+        return false;
     MONITORINFO monitor{sizeof(monitor)};
     RECT covered{};
     if (!GetMonitorInfoW(MonitorFromWindow(widget, MONITOR_DEFAULTTONEAREST), &monitor) || !GetWindowRect(front, &covered))
@@ -51,7 +47,7 @@ void TaskbarWidget::set_art(HICON awake, HICON asleep, HICON missing, HICON dead
     art_[1] = asleep;
     art_[2] = missing;
     art_[3] = dead;
-    drawn_ = false; // redraw with the new art
+    drawn_ = false;
 }
 
 void TaskbarWidget::remove() {
@@ -72,7 +68,7 @@ void TaskbarWidget::track_hover() {
     POINT cursor{};
     RECT bounds{};
     if (!GetCursorPos(&cursor) || !GetWindowRect(window_, &bounds)) return;
-    // Only when the widget itself is under the cursor, not a window covering it.
+    // only if nothing covers the widget
     if (PtInRect(&bounds, cursor) && WindowFromPoint(cursor) == window_ && !fullscreen_app_in_front(window_) &&
         !IsWindowVisible(tooltip_)) PostMessageW(window_, WM_MOUSEHOVER, 0, 0);
     else if (!PtInRect(&bounds, cursor) && IsWindowVisible(tooltip_)) PostMessageW(window_, WM_MOUSELEAVE, 0, 0);
@@ -148,7 +144,7 @@ bool TaskbarWidget::ensure(HWND bar) {
         tool.uFlags = TTF_IDISHWND | TTF_TRACK | TTF_ABSOLUTE;
         tool.hwnd = owner_;
         tool.uId = reinterpret_cast<UINT_PTR>(window_);
-        tool.lpszText = LPSTR_TEXTCALLBACKW; // the owner supplies the text on demand
+        tool.lpszText = LPSTR_TEXTCALLBACKW;
         if (!SendMessageW(tooltip_, TTM_ADDTOOLW, 0, reinterpret_cast<LPARAM>(&tool)))
             log_event("Could not attach taskbar hover tooltip.");
         SendMessageW(tooltip_, TTM_SETMAXTIPWIDTH, 0, 420);
@@ -157,22 +153,18 @@ bool TaskbarWidget::ensure(HWND bar) {
     return true;
 }
 
-// Whole-number scale keeps every art pixel a crisp square: 1x (28x16) at 100% display
-// scaling, 2x from 150%, but never larger than the space allows (a horizontal taskbar's
-// height, or a vertical taskbar's width less margins).
+// whole-number scale only (1x at 100%, 2x from 150%), limited by the space
 SIZE TaskbarWidget::art_size(int max_width, int max_height) const {
     int scale = std::max(1, MulDiv(1, static_cast<int>(GetDpiForWindow(window_)), 96));
     scale = std::min({scale, std::max(1, max_height / art_height), std::max(1, max_width / art_width)});
     return {art_width * scale, art_height * scale};
 }
 
-// Spacing is written in device-independent pixels (1/96 inch) and scaled here.
 int TaskbarWidget::px(int value) const {
     return MulDiv(value, window_ ? static_cast<int>(GetDpiForWindow(window_)) : 96, 96);
 }
 
-// The text font: the classic GUI font, scaled to the widget's DPI. The stock DEFAULT_GUI_FONT is
-// always sized for 96 DPI, so it would look tiny at 150%. Recreated only when the DPI changes.
+// DEFAULT_GUI_FONT stays at 96 DPI, so make one for this DPI
 HFONT TaskbarWidget::font() {
     UINT dpi = window_ ? GetDpiForWindow(window_) : 96;
     if (font_ && font_dpi_ == dpi) return font_.get();
@@ -205,13 +197,9 @@ void TaskbarWidget::render(int width, int height, bool with_text) {
     SetDCBrushColor(dc, RGB(1, 1, 1));
     FillRect(dc, &area, static_cast<HBRUSH>(GetStockObject(DC_BRUSH)));
     SIZE size = art_size(width - px(8), height);
-    // With text the switch sits at the left margin; alone it is centered (on a horizontal
-    // taskbar that is the same 4 DIP margin; on a vertical one it centers in the column).
     int art_w = size.cx, art_h = size.cy;
     int art_x = with_text ? px(4) : (width - art_w) / 2;
-    // Draw the art 1:1 into a small bitmap keyed with the transparent color, then enlarge
-    // only its 16 art rows. COLORONCOLOR is nearest-neighbor: at a whole-number scale each
-    // pixel becomes an exact block, so nothing is dropped or blurred.
+    // draw 1:1 then stretch nearest-neighbor (COLORONCOLOR) so pixels stay square
     HICON art = art_[static_cast<int>(shown_.art)];
     HDC art_dc = CreateCompatibleDC(screen);
     HBITMAP art_bitmap = CreateCompatibleBitmap(screen, art_width, art_width);
@@ -228,7 +216,7 @@ void TaskbarWidget::render(int width, int height, bool with_text) {
     if (art_bitmap) DeleteObject(art_bitmap);
     if (art_dc) DeleteDC(art_dc);
     if (shown_.alert) {
-        // Idle highlight: a red box around the whole widget (switch and text), as four solid edges.
+        // idle highlight
         int pad = px(3), line = px(2);
         RECT box{art_x - pad, (height - art_h) / 2 - pad, width - (art_x - pad), (height + art_h) / 2 + pad};
         SetDCBrushColor(dc, idle_red);
@@ -249,7 +237,7 @@ void TaskbarWidget::render(int width, int height, bool with_text) {
     auto* frame = static_cast<DWORD*>(pixels);
     for (int i = 0; i < width * height; ++i) {
         DWORD color = frame[i] & 0xffffff;
-        // Alpha 1 keeps otherwise clear pixels mouse-active.
+        // alpha 1 keeps clear pixels clickable
         frame[i] = color == 0x010101 || color == 0 ? 0x01000000 : color | 0xff000000;
     }
     SIZE size_pixels{width, height};
@@ -272,13 +260,10 @@ bool TaskbarWidget::update(const Look& look) {
         return false;
     }
     bool known_tray = notification && GetWindowRect(notification, &tray_bounds) && tray_bounds.right > tray_bounds.left;
-    // Docked left or right, the taskbar is a column: the widget stacks above the notification
-    // area and shows only the switch, since text does not fit across a column.
+    // vertical taskbar: switch only, above the tray
     bool vertical = bounds.bottom - bounds.top > bounds.right - bounds.left;
 
-    // An auto-hiding taskbar slides mostly off screen. The widget is its child and slides with
-    // it, so its last placement stays right; re-placing an off-screen taskbar would only churn.
-    // Keep the position and just redraw if the look changed.
+    // auto-hide: the widget slides with its parent, so keep the placement and just redraw
     MONITORINFO monitor{sizeof(monitor)};
     RECT on_screen{};
     if (drawn_ && IsWindowVisible(window_) && GetMonitorInfoW(MonitorFromWindow(bar, MONITOR_DEFAULTTONEAREST), &monitor)) {
@@ -304,18 +289,12 @@ bool TaskbarWidget::update(const Look& look) {
     SelectObject(dc, old);
     ReleaseDC(window_, dc);
     SIZE art = vertical ? art_size(bar_width - px(8), bar_height) : art_size(bar_width, bar_height);
-    // Horizontal: 4 DIP left margin, art, 6 DIP gap, text, 6 DIP right margin (must match
-    // render); the strip is the taskbar's height. Vertical: the switch alone, the column's
-    // width, with 6 DIP above and below.
+    // must match render()
     int icon_width = px(4) + art.cx + px(4);
     int full_width = look.text.empty() ? icon_width : icon_width + px(8) + text.cx;
     int icon_height = px(6) + art.cy + px(6);
 
-    // Find the taskbar neighbors to keep clear of: other widgets (such as a battery widget),
-    // the notification area, the task buttons. While Start or Search is open, Windows 11
-    // reports them hidden, and may shift them across the bar, although they keep their place
-    // along it and keep drawing. Only the extent along the bar matters for placement, so a
-    // neighbor seen visible keeps its space until its window is destroyed or moves along the bar.
+    // Neighbors to avoid. While Start/Search is open Win11 reports them hidden, so keep any seen visible until it is destroyed or moves.
     struct Scan {
         HWND self; RECT bar; bool vertical; const std::map<HWND, RECT>* known;
         std::map<HWND, RECT> found; std::string names; std::optional<int> buttons_end;
@@ -329,8 +308,7 @@ bool TaskbarWidget::update(const Look& look) {
         char name[64]{};
         GetClassNameA(child, name, 64);
         std::string_view cls(name);
-        // These are surfaces containing controls. Actual app buttons and independent
-        // widgets can also be wider than half the bar and must always reserve space.
+        // wide app buttons and widgets still reserve space
         if (cls == "Windows.UI.Composition.DesktopWindowContentBridge" || cls == "Windows.UI.Core.CoreWindow"
             || cls == "ReBarWindow32")
             return TRUE;
@@ -338,7 +316,7 @@ bool TaskbarWidget::update(const Look& look) {
         int start = state.vertical ? rect.top : rect.left, end = state.vertical ? rect.bottom : rect.right;
         if (IsWindowVisible(child)) {
             RECT overlap{};
-            if (!IntersectRect(&overlap, &rect, &state.bar)) return TRUE; // not on the bar
+            if (!IntersectRect(&overlap, &rect, &state.bar)) return TRUE;
             state.found[child] = rect;
             if (buttons) state.buttons_end = std::max<int>(end, state.buttons_end.value_or(end));
             state.names += std::format(" [{} {}-{}]", name, start, end);
@@ -348,16 +326,13 @@ bool TaskbarWidget::update(const Look& look) {
         if (known != state.known->end()
             && (state.vertical ? known->second.top == rect.top && known->second.bottom == rect.bottom
                                : known->second.left == rect.left && known->second.right == rect.right)) {
-            state.found[child] = known->second; // keep the last on-bar rectangle
+            state.found[child] = known->second; // keep the last on-bar rect
             if (buttons) state.buttons_end = std::max<int>(end, state.buttons_end.value_or(end));
             state.names += std::format(" [{} {}-{} remembered]", name, start, end);
         }
         return TRUE;
     }, reinterpret_cast<LPARAM>(&scan));
-    // Start/Search can give the descendant scan an incomplete view of the bar even though its
-    // battery strip is still addressable as a direct child. Read its current bounds on each
-    // layout so a resized or removed strip frees space. Its own WS_VISIBLE style is checked:
-    // IsWindowVisible also looks at the taskbar's containers, which Windows hides meanwhile.
+    // Start/Search can hide the battery widget from the scan; read it directly. Check its own WS_VISIBLE, not IsWindowVisible.
     if (HWND battery = FindWindowExW(bar, nullptr, L"WirelessBatteryWidget", nullptr)) {
         RECT rect{}, intersection{};
         if ((GetWindowLongPtrW(battery, GWL_STYLE) & WS_VISIBLE) && GetWindowRect(battery, &rect)
@@ -366,16 +341,13 @@ bool TaskbarWidget::update(const Look& look) {
                                       vertical ? rect.top : rect.left, vertical ? rect.bottom : rect.right);
     }
     neighbors_ = std::move(scan.found);
-    // Where the app buttons really end. On Windows 11 the legacy button window can report a
-    // stale edge (175% scaling put the widget on top of the last apps), so also use the
-    // drawn buttons measured through UI Automation, whichever reaches further.
+    // Win11's legacy button window can report a stale edge, so also use the UIA-measured buttons.
     if (auto apps = probe_.app_buttons_end()) {
         int apps_end = vertical ? apps->bottom : apps->right;
         if (!scan.buttons_end || apps_end > *scan.buttons_end) scan.buttons_end = apps_end;
         scan.names += std::format(" [app buttons end {} automation]", apps_end);
     }
 
-    // Place along the bar: x for a horizontal taskbar, y for a vertical one.
     std::optional<WidgetPlacement> fit;
     if (known_tray && scan.buttons_end) {
         if (vertical)
@@ -391,14 +363,13 @@ bool TaskbarWidget::update(const Look& look) {
     int height = !fit ? 0 : vertical ? fit->width : bar_height;
     bool with_text = fit && !vertical && fit->width == full_width && !look.text.empty();
 
-    // Diagnostics: record each distinct placement decision (rare; only when inputs change).
     auto inputs = std::format("Widget placement: bar {}-{}{}, tray {}-{}{}", vertical ? bounds.top : bounds.left,
                               vertical ? bounds.bottom : bounds.right, vertical ? " vertical" : "",
                               vertical ? tray_bounds.top : tray_bounds.left, vertical ? tray_bounds.bottom : tray_bounds.right,
                               notification ? "" : " (estimated)");
     int along = vertical ? y : x;
     if (inputs != last_inputs_ || scan.names != last_names_ || along != last_x_) {
-        probe_.request(); // the taskbar changed: measure the app buttons again
+        probe_.request();
         log_event(std::format("{}, {} {}, {} {}{}", inputs, vertical ? "height" : "width", vertical ? height : width,
                               vertical ? "y" : "x", along, scan.names));
         last_inputs_ = inputs;

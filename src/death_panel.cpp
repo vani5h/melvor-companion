@@ -14,8 +14,7 @@ bool red(std::uint32_t p) {
     return r > 120 && r > ((p >> 8) & 255) * 1.65 && r > (p & 255) * 1.65;
 }
 
-// Sparse color observations across the game's fixed YOU DIED lettering. A candidate
-// must match both the white letter shapes and their red outline. No game textures ship.
+// sampled points across the YOU DIED lettering: white letters plus red outline
 constexpr std::array<std::string_view, 7> rows{
     ".+.-r+rr+r++-r++rr+r--rr+.++r-r+rr++..+r++.++-",
     "-+.-rr.+r--+r-++--rr---r+r-++-r+r-.+--+-.+--+r",
@@ -45,9 +44,7 @@ bool matches(std::span<const std::uint32_t> frame, int stride, int left, int top
 bool has_death_banner(std::span<const std::uint32_t> frame, int width, int height) {
     if (width < 100 || height < 16 || width > 8192 || height > 8192 ||
         frame.size() != static_cast<size_t>(width)*height) return false;
-    // Each letter has a connected white interior. Use the Y's bounding box to infer
-    // scale, then check the whole phrase. A button or a block of plain text cannot
-    // pass simply by containing a similarly sized white glyph.
+    // scale from the Y, then check the whole phrase so a lone glyph can't pass
     std::vector<unsigned char> mask(frame.size());
     std::transform(frame.begin(), frame.end(), mask.begin(), white);
     std::vector<int> stack;
@@ -70,8 +67,7 @@ bool has_death_banner(std::span<const std::uint32_t> frame, int width, int heigh
         }
         int w=x1-x0+1, h=y1-y0+1;
         if (h<16 || w*100<h*86 || w*100>h*109) continue;
-        // Rounding a single letter to the nearest pixel magnifies the error across
-        // seven letters. Try the nearby scales allowed by that rounding.
+        // rounding one letter scales the error by seven, so try nearby scales
         for (int offset=-8; offset<=8; offset+=2) {
             if (matches(frame,width,x0,y0,w*572/79+offset,h)) return true;
         }

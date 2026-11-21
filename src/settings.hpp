@@ -8,8 +8,6 @@
 namespace companion {
 void set_dark_mode(bool enabled);
 bool dark_mode();
-// Opens the Goals window. `bounds` restores the last window position and size; `save_bounds`
-// receives them when the window closes.
 void edit_goals(HWND owner, const std::wstring& text, std::function<void(const std::wstring&)> save,
                 std::optional<RECT> bounds = std::nullopt, std::function<void(const RECT&)> save_bounds = {});
 constexpr DWORD default_chord = MAKELONG('M', MOD_CONTROL);
