@@ -23,8 +23,6 @@ A small, lightweight, free Windows app for the Steam version of Melvor Idle 2. T
 - **Taskbar widget.** Show the switch and your session time or current activity right on the taskbar.
 - **Launch through Steam** from the tray menu, optionally hiding the game as soon as it starts.
 
-+ IF MI2 stays muted while opened, manually unmute it in volume mixer
-
 <table>
   <tr>
     <td align="center" valign="bottom"><img src="docs/images/tray.png" alt="Melvor Companion in the notification area"><br><sub><b>[1]</b> In the tray</sub></td>
@@ -45,6 +43,8 @@ A small, lightweight, free Windows app for the Steam version of Melvor Idle 2. T
 4. Right-click the icon for the menu. Turn on **Start with Windows** if you want it running every time you sign in.
 
 The switch shows a mint **M** while Melvor is visible, an amber moon while it's hidden, and a gray **×** when Melvor isn't running. While hidden, a red box means your character went idle, and a red switch with a skull means your character died.
+
++ IF MI2 stays muted while opened, manually unmute it in volume mixer
 
 ## Detailed Features
 
