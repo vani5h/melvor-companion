@@ -22,6 +22,8 @@ A small, lightweight, free Windows app for the Steam version of Melvor Idle 2. T
 - **Taskbar widget.** Show the switch and your session time or current activity right on the taskbar.
 - **Launch through Steam** from the tray menu, optionally hiding the game as soon as it starts.
 
+![Taskbar widget showing time hidden, today's total, and the current activity](docs/images/taskbar.png)
+
 ![Detailed Summary window](docs/images/summary.png) ![Goals window](docs/images/goals.png)
 
 ## Getting started
@@ -29,6 +31,9 @@ A small, lightweight, free Windows app for the Steam version of Melvor Idle 2. T
 1. Extract the Windows x64 ZIP from the [latest release](https://github.com/vani5h/melvor-companion/releases/latest) into a folder you will keep.
 2. Run it. Windows may show a SmartScreen warning because the app is new and not code-signed: choose **More info**, then **Run anyway**.
 3. Look for the switch icon in the notification area by the clock. On Windows 11 new icons start hidden under the **^** arrow; drag it onto the taskbar to keep it visible.
+
+   ![The switch icon in the notification area](docs/images/tray.png)
+
 4. Right-click the icon for the menu. Turn on **Start with Windows** if you want it running every time you sign in.
 
 The switch shows a mint **M** while Melvor is visible, an amber moon while it's hidden, and a gray **×** when Melvor isn't running. While hidden, a red box means your character went idle, and a red switch with a skull means your character died.
