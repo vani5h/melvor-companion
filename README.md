@@ -44,8 +44,6 @@ A small, lightweight, free Windows app for the Steam version of Melvor Idle 2. T
 
 The switch shows a mint **M** while Melvor is visible, an amber moon while it's hidden, and a gray **×** when Melvor isn't running. While hidden, a red box means your character went idle, and a red switch with a skull means your character died.
 
-+ IF MI2 stays muted while opened, manually unmute it in volume mixer
-
 ## Detailed Features
 
 |  |  |
@@ -68,6 +66,10 @@ If the companion closes unexpectedly while Melvor is hidden, reopen the companio
 - Activity and summaries come from your **save file**, which Melvor writes about every ten seconds, so they can lag slightly behind the game.
 - With several characters, the most recently saved one is shown.
 - The **taskbar widget** may fail for specific instances. It finds space beside the notification area, shrinks to just the icon on a crowded taskbar, and falls back to the regular tray icon when there's no room. On a taskbar docked to the left or right it shows the switch alone, just above the notification area. With an auto-hiding taskbar it slides away and back with the taskbar. Multiple monitors are not well tested yet. If it fails for any reason, please let me know or open an issue.
+
+## Possible Issues
+
+- IF MI2 stays muted while opened, manually unmute it in volume mixer
 
 ## Updating
 
