@@ -87,9 +87,17 @@ If Melvor updates its save format, Melvor Companion checks whether it can still 
 ## Requirements
 
 Windows 10 or 11 (tested on Windows 11) and the Steam version of Melvor Idle 2. Windows only for now; macOS may come later.
+
 ## Building from source
 
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+Melvor Companion is plain C++20 and the Win32 API, with no runtime or frameworks. Install [Visual Studio Build Tools](https://learn.microsoft.com/en-us/cpp/build/vscpp-step-0-installation?view=msvc-170) with **Desktop development with C++** (the x64 MSVC tools, a Windows SDK, and C++ CMake tools), then run from an **x64 Native Tools Command Prompt** in the project folder:
+
+```bat
+cmake -S . -B build -A x64
+cmake --build build --config Release
+```
+
+The app is `build\Release\MelvorCompanion.exe`. Exit a running copy from its tray menu before rebuilding, since Windows locks the file while it runs.
 
 ## License
 
