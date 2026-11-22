@@ -107,14 +107,36 @@ Windows 10 or 11 (tested on Windows 11) and the Steam version of Melvor Idle 2. 
 
 ## Building from source
 
-Melvor Companion is plain C++20 and the Win32 API, with no runtime or frameworks. Install [Visual Studio Build Tools](https://learn.microsoft.com/en-us/cpp/build/vscpp-step-0-installation?view=msvc-170) with **Desktop development with C++** (the x64 MSVC tools, a Windows SDK, and C++ CMake tools), then run from an **x64 Native Tools Command Prompt** in the project folder:
+### 1. Download the source for the version you want
+
+Open the [releases page](https://github.com/vani5h/melvor-companion/releases), choose a version, and download **Source code (zip)** under **Assets**. Extract it somewhere you can easily find. Open the extracted folder that contains `CMakeLists.txt` and `src`. Copy its path from File Explorer’s address bar. This method works without Git.
+
+### 2. Install the Windows build tools
+
+In the Visual Studio Installer, select **Desktop development with C++**. In the installation details, make sure the **MSVC x64/x86 build tools**, a **Windows SDK**, and **C++ CMake tools for Windows** are selected. The standalone Build Tools edition is sufficient. [Microsoft’s installation guide](https://learn.microsoft.com/en-us/cpp/build/vscpp-step-0-installation)
+
+### 3. Compile a 64-bit Release build
+
+From the Windows Start menu, open **x64 Native Tools Command Prompt** for your Visual Studio installation. This prompt sets up the compiler and SDK for you. Change to the source folder, replacing the example path with the one you copied. Keep the quotes if the path contains spaces.
+
+```bat
+cd /d "C:\Projects\melvor-companion"
+```
+
+Run these commands in order. The first uses CMake to generate an x64 Visual Studio project in the `build` folder. The second uses MSVC to compile and link the Release executable.
 
 ```bat
 cmake -S . -B build -A x64
 cmake --build build --config Release
 ```
 
-The app is `build\Release\MelvorCompanion.exe`. Exit a running copy from its tray menu before rebuilding, since Windows locks the file while it runs.
+### 4. Run your copy
+
+If Melvor Companion is already running, right-click its switch icon and choose **Exit**. Run your newly built executable from the same prompt.
+
+```bat
+build\Release\MelvorCompanion.exe
+```
 
 ## License
 
