@@ -6,7 +6,7 @@ includes a few QOL features, such as what you're training at a glance, tracking 
 
 A small, lightweight, free Windows app for the Steam version of Melvor Idle 2. The portable executable includes the C++ runtime.
 
-> **Windows only for now.** Melvor Companion runs on Windows 10 and 11. A macOS version may come later.
+> **Windows only for now.** Melvor Companion runs on Windows 10 and 11.
 
 > **Unofficial.** Melvor Companion is a fan-made tool. It is not affiliated with or endorsed by Games by Malcs. Melvor Idle is their trademark.
 
