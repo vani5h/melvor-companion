@@ -1,7 +1,7 @@
 # Melvor Companion
 
 **Hide Melvor Idle 2 away from your screen, in your system tray while it keeps playing.**
-+ includes a few QOL features, such as what you're training at a glance, tracking goals, and a summary of what was earned while it was hidden.
+) includes a few QOL features, such as what you're training at a glance, tracking goals, and a summary of what was earned while it was hidden.
 
 A small, lightweight, free Windows app for the Steam version of Melvor Idle 2. The portable executable includes the C++ runtime.
 
