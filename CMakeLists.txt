@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(MelvorCompanion VERSION 0.1.1 LANGUAGES C CXX)
+project(MelvorCompanion VERSION 0.1.2 LANGUAGES C CXX)
 # GitHub "owner/repo" whose releases the optional update check compares against this version.
 # An empty value hides the menu item.
 set(MELVOR_COMPANION_UPDATE_REPO "vani5h/melvor-companion" CACHE STRING "GitHub owner/repo for the update check")
