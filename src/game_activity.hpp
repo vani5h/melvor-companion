@@ -51,6 +51,7 @@ struct ProgressSnapshot {
     long long slayer_coins{};
     std::map<std::wstring, SkillProgress> skills;
     std::map<std::wstring, long long> items;
+    bool bank_read{};
     std::optional<long long> deaths;
     std::optional<int> health; // shared HP, also outside combat
     std::optional<double> thieving_damage; // cumulative

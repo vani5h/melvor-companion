@@ -112,13 +112,15 @@ std::vector<unsigned char> decompress(const std::vector<unsigned char>& compress
     return output;
 }
 
-// Steam Early Access
-constexpr int known_save_version = 31;
+// Steam Early Access. 32 added a byte to each bank tab.
+constexpr int oldest_save_version = 31;
+constexpr int newest_save_version = 32;
+bool known_version(int version) { return version>=oldest_save_version && version<=newest_save_version; }
 
 // strict=false reads unknown versions; caller verifies (parse_progress)
 ActivitySnapshot read_header(Reader& reader, bool strict, int& version) {
     version=reader.int32();
-    if(strict && version!=known_save_version) throw UnsupportedSaveVersion(version);
+    if(strict && !known_version(version)) throw UnsupportedSaveVersion(version);
     ActivitySnapshot result;
     auto id = reader.take(result.save_id.size());
     std::copy(id.begin(), id.end(), result.save_id.begin());
@@ -138,7 +140,7 @@ std::wstring display_name(const std::wstring& id) {
 }
 
 // Bank inventory: header, then tabs of (quantity, flags, item ID). Summed across tabs.
-void read_inventory(Reader inventory, std::map<std::wstring, long long>& items) {
+void read_inventory(Reader inventory, int version, std::map<std::wstring, long long>& items) {
     inventory.int32(); // unknown, 0 so far
     int tabs=inventory.int32();
     if(tabs<0 || tabs>1000) throw std::runtime_error("Invalid bank tab count");
@@ -156,6 +158,7 @@ void read_inventory(Reader inventory, std::map<std::wstring, long long>& items) 
         int extras=inventory.int32();
         if(extras<0 || extras>100000) throw std::runtime_error("Invalid bank tab data");
         for(int i=0;i<extras;++i) { inventory.take(2); inventory.text(); }
+        if(version>=32) inventory.take(1); // unknown, 0 so far
     }
 }
 }
@@ -269,7 +272,8 @@ ProgressSnapshot parse_progress(std::span<const unsigned char> bytes) {
                     continue;
                 }
                 if(key==L"Inventory" && display_name(name)==L"Bank") {
-                    try { read_inventory(value,result.items); } catch(const std::runtime_error&) { result.items.clear(); }
+                    try { read_inventory(value,version,result.items); result.bank_read=true; }
+                    catch(const std::runtime_error&) { result.items.clear(); }
                     continue;
                 }
                 // v31 stores XP only; some builds add the level
@@ -285,7 +289,7 @@ ProgressSnapshot parse_progress(std::span<const unsigned char> bytes) {
         }
     }
     // Unknown version: accept only if the skill levels add up to the stored total.
-    if(version!=known_save_version) {
+    if(!known_version(version)) {
         int sum=0;
         for(const auto& [name,skill]:result.skills) sum+=skill.level;
         if(result.skills.size()<10 || sum!=result.total_level) throw UnsupportedSaveVersion(version);
@@ -338,10 +342,12 @@ ProgressChange compare_progress(const ProgressSnapshot& before, const ProgressSn
         change.skills.push_back({name,now.xp-xp_before,level_before,now.level,std::max(0.0,next)});
     }
     std::sort(change.skills.begin(),change.skills.end(),[](const SkillGain& a,const SkillGain& b) { return a.xp>b.xp; });
-    // missing = zero
+    // missing = zero, but an unreadable bank is not an empty one
     std::map<std::wstring,long long> delta;
-    for(const auto& [name,count]:after.items) delta[name]+=count;
-    for(const auto& [name,count]:before.items) delta[name]-=count;
+    if(before.bank_read && after.bank_read) {
+        for(const auto& [name,count]:after.items) delta[name]+=count;
+        for(const auto& [name,count]:before.items) delta[name]-=count;
+    }
     for(const auto& [name,count]:delta) {
         if(count>0) change.gained.push_back({name,count});
         if(count<0) change.used.push_back({name,count});
